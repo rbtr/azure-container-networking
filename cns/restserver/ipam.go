@@ -406,17 +406,19 @@ func (service *HTTPRestService) MarkExistingIPsAsPending(pendingIPIDs []string) 
 	defer service.Unlock()
 
 	for _, id := range pendingIPIDs {
-		if ipconfig, exists := service.PodIPConfigState[id]; exists {
-			if ipconfig.State == cns.Allocated {
-				return fmt.Errorf("Failed to mark IP [%v] as pending, currently allocated", id)
-			}
-
-			logger.Printf("[MarkExistingIPsAsPending]: Marking IP [%+v] to PendingRelease", ipconfig)
-			ipconfig.State = cns.PendingRelease
-			service.PodIPConfigState[id] = ipconfig
-		} else {
+		ipconfig, ok := service.PodIPConfigState[id]
+		if !ok {
 			logger.Errorf("Inconsistent state, ipconfig with ID [%v] marked as pending release, but does not exist in state", id)
+			continue
 		}
+
+		if ipconfig.State == cns.Allocated { // TODO(rbtr): this early return aborts processing the rest of the input
+			return fmt.Errorf("failed to mark IP [%v] as pending, currently allocated", id)
+		}
+
+		logger.Printf("[MarkExistingIPsAsPending]: Marking IP [%+v] to PendingRelease", ipconfig)
+		ipconfig.State = cns.PendingRelease
+		service.PodIPConfigState[id] = ipconfig
 	}
 	return nil
 }
