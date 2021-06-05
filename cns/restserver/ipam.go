@@ -378,25 +378,24 @@ func (service *HTTPRestService) releaseIPConfig(podInfo cns.PodInfo) error {
 	service.Lock()
 	defer service.Unlock()
 
-	ipID := service.PodIPIDByPodInterfaceKey[podInfo.Key()]
-	if ipID != "" {
-		if ipconfig, isExist := service.PodIPConfigState[ipID]; isExist {
-			logger.Printf("[releaseIPConfig] Releasing IP %+v for pod %+v", ipconfig.IPAddress, podInfo)
-			_, err := service.setIPConfigAsAvailable(ipconfig, podInfo)
-			if err != nil {
-				return fmt.Errorf("[releaseIPConfig] failed to mark IPConfig [%+v] as Available. err: %v", ipconfig, err)
-			}
-			logger.Printf("[releaseIPConfig] Released IP %+v for pod %+v", ipconfig.IPAddress, podInfo)
-		} else {
-			logger.Errorf("[releaseIPConfig] Failed to get release ipconfig %+v and pod info is %+v. Pod to IPID exists, but IPID to IPConfig doesn't exist, CNS State potentially corrupt",
-				ipconfig.IPAddress, podInfo)
-			return fmt.Errorf("[releaseIPConfig] releaseIPConfig failed. IPconfig %+v and pod info is %+v. Pod to IPID exists, but IPID to IPConfig doesn't exist, CNS State potentially corrupt",
-				ipconfig.IPAddress, podInfo)
-		}
-	} else {
-		logger.Errorf("[releaseIPConfig] SetIPConfigAsAvailable ignoring request to release, no allocation found for pod [%+v]", podInfo)
+	ipID, ok := service.PodIPIDByPodInterfaceKey[podInfo.Key()]
+	if !ok {
+		logger.Errorf("[releaseIPConfig] SetIPConfigAsAvailable failed to release, no allocation found for pod [%+v]", podInfo)
 		return nil
 	}
+
+	ipconfig, ok := service.PodIPConfigState[ipID]
+	if !ok {
+		logger.Errorf("[releaseIPConfig] Failed to get release ipconfig %+v and pod info is %+v. Pod to IPID exists, but IPID to IPConfig doesn't exist, CNS State potentially corrupt", ipconfig.IPAddress, podInfo)
+		return fmt.Errorf("[releaseIPConfig] releaseIPConfig failed. IPconfig %+v and pod info is %+v. Pod to IPID exists, but IPID to IPConfig doesn't exist, CNS State potentially corrupt", ipconfig.IPAddress, podInfo)
+	}
+
+	logger.Printf("[releaseIPConfig] Releasing IP %+v for pod %+v", ipconfig.IPAddress, podInfo)
+	_, err := service.setIPConfigAsAvailable(ipconfig, podInfo)
+	if err != nil {
+		return fmt.Errorf("[releaseIPConfig] failed to mark IPConfig [%+v] as Available. err: %w", ipconfig, err)
+	}
+	logger.Printf("[releaseIPConfig] Released IP %+v for pod %+v", ipconfig.IPAddress, podInfo)
 	return nil
 }
 
