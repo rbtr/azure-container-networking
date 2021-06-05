@@ -421,27 +421,24 @@ func (service *HTTPRestService) MarkExistingIPsAsPending(pendingIPIDs []string) 
 	return nil
 }
 
+// GetExistingIPConfig returns a tuple of an IP config, a bool that it exists, and an error if encountered.
 func (service *HTTPRestService) GetExistingIPConfig(podInfo cns.PodInfo) (cns.PodIpInfo, bool, error) {
-	var (
-		podIpInfo cns.PodIpInfo
-		isExist   bool
-	)
-
 	service.RLock()
 	defer service.RUnlock()
 
-	ipID := service.PodIPIDByPodInterfaceKey[podInfo.Key()]
-	if ipID != "" {
-		if ipState, isExist := service.PodIPConfigState[ipID]; isExist {
-			err := service.populateIpConfigInfoUntransacted(ipState, &podIpInfo)
-			return podIpInfo, isExist, err
-		}
-
-		logger.Errorf("Failed to get existing ipconfig. Pod to IPID exists, but IPID to IPConfig doesn't exist, CNS State potentially corrupt")
-		return podIpInfo, isExist, fmt.Errorf("Failed to get existing ipconfig. Pod to IPID exists, but IPID to IPConfig doesn't exist, CNS State potentially corrupt")
+	var podIpInfo cns.PodIpInfo
+	ipID, ok := service.PodIPIDByPodInterfaceKey[podInfo.Key()]
+	if !ok || ipID == "" {
+		return podIpInfo, false, nil
 	}
 
-	return podIpInfo, isExist, nil
+	if ipState, ok := service.PodIPConfigState[ipID]; ok {
+		err := service.populateIpConfigInfoUntransacted(ipState, &podIpInfo)
+		return podIpInfo, true, err
+	}
+
+	logger.Errorf("Failed to get existing ipconfig. Pod to IPID exists, but IPID to IPConfig doesn't exist, CNS State potentially corrupt")
+	return podIpInfo, false, fmt.Errorf("failed to get existing ipconfig. Pod to IPID exists, but IPID to IPConfig doesn't exist, CNS State potentially corrupt")
 }
 
 func (service *HTTPRestService) AllocateDesiredIPConfig(podInfo cns.PodInfo, desiredIpAddress string) (cns.PodIpInfo, error) {
