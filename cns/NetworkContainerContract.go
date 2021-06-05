@@ -60,11 +60,13 @@ const (
 )
 
 // IPConfig States for CNS IPAM
+type IPConfigState string
+
 const (
-	Available          = "Available"
-	Allocated          = "Allocated"
-	PendingRelease     = "PendingRelease"
-	PendingProgramming = "PendingProgramming"
+	Available          IPConfigState = "Available"
+	Allocated          IPConfigState = "Allocated"
+	PendingRelease     IPConfigState = "PendingRelease"
+	PendingProgramming IPConfigState = "PendingProgramming"
 )
 
 // ChannelMode :- CNS channel modes
@@ -363,7 +365,7 @@ type IPConfigResponse struct {
 // GetIPAddressesRequest is used in CNS IPAM mode to get the states of IPConfigs
 // The IPConfigStateFilter is a slice of IP's to fetch from CNS that match those states
 type GetIPAddressesRequest struct {
-	IPConfigStateFilter []string
+	IPConfigStateFilter []IPConfigState
 }
 
 // GetIPAddressStateResponse is used in CNS IPAM mode as a response to get IP address state

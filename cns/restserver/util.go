@@ -268,7 +268,7 @@ func (service *HTTPRestService) addIPConfigStateUntransacted(ncId string, hostVe
 		}
 		// Using the updated NC version attached with IP to compare with latest nmagent version and determine IP statues.
 		// When reconcile, service.PodIPConfigState doens't exist, rebuild it with the help of NC version attached with IP.
-		var newIPCNSStatus string
+		var newIPCNSStatus cns.IPConfigState
 		if hostVersion < ipconfig.NCVersion {
 			newIPCNSStatus = cns.PendingProgramming
 		} else {

@@ -314,7 +314,7 @@ func (cnsClient *CNSClient) ReleaseIPAddress(ipconfig *cns.IPConfigRequest) erro
 
 // GetIPAddressesWithStates takes a variadic number of string parameters, to get all IP Addresses matching a number of states
 // usage GetIPAddressesWithStates(cns.Available, cns.Allocated)
-func (cnsClient *CNSClient) GetIPAddressesMatchingStates(StateFilter ...string) ([]cns.IPConfigurationStatus, error) {
+func (cnsClient *CNSClient) GetIPAddressesMatchingStates(StateFilter ...cns.IPConfigState) ([]cns.IPConfigurationStatus, error) {
 	var (
 		resp cns.GetIPAddressStatusResponse
 		err  error
