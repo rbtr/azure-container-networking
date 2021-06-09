@@ -201,31 +201,22 @@ func (service *HTTPRestService) getHTTPRestDataHandler(w http.ResponseWriter, r 
 }
 
 func (service *HTTPRestService) getIPAddressesHandler(w http.ResponseWriter, r *http.Request) {
-	var (
-		req           cns.GetIPAddressesRequest
-		resp          cns.GetIPAddressStatusResponse
-		statusCode    int
-		returnMessage string
-		err           error
-	)
+	service.RLock()
+	defer service.RUnlock()
 
-	statusCode = UnexpectedError
+	var req cns.GetIPAddressesRequest
+	var resp cns.GetIPAddressStatusResponse
 
 	defer func() {
-		if err != nil {
-			resp.Response.ReturnCode = statusCode
-			resp.Response.Message = returnMessage
-		}
-
-		err = service.Listener.Encode(w, &resp)
+		err := service.Listener.Encode(w, &resp)
 		logger.ResponseEx(service.Name, req, resp, resp.Response.ReturnCode, ReturnCodeToString(resp.Response.ReturnCode), err)
 	}()
 
-	err = service.Listener.Decode(w, r, &req)
+	err := service.Listener.Decode(w, r, &req)
 	if err != nil {
-		returnMessage = err.Error()
-		logger.Errorf("getIPAddressesHandler decode failed because %v, GetIPAddressesRequest is %v",
-			returnMessage, req)
+		resp.Response.Message = err.Error()
+		resp.Response.ReturnCode = UnexpectedError
+		logger.Errorf("getIPAddressesHandler decode failed because %v, GetIPAddressesRequest is %v", resp.Response.Message, req)
 		return
 	}
 
