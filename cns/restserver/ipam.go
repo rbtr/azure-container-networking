@@ -179,42 +179,25 @@ func (service *HTTPRestService) GetPodIPConfigState() map[string]cns.IPConfigura
 func (service *HTTPRestService) getPodIPIDByOrchestratorContexthandler(w http.ResponseWriter, r *http.Request) {
 	service.RLock()
 	defer service.RUnlock()
-	var resp cns.GetPodContextResponse
-	resp.PodContext = service.PodIPIDByPodInterfaceKey
+	resp := cns.GetPodContextResponse{
+		PodContext: service.PodIPIDByPodInterfaceKey,
+	}
 	err := service.Listener.Encode(w, &resp)
 	logger.Response(service.Name, resp, resp.Response.ReturnCode, ReturnCodeToString(resp.Response.ReturnCode), err)
 }
 
-func (service *HTTPRestService) GetHTTPRestDataHandler(w http.ResponseWriter, r *http.Request) {
-	var (
-		resp          GetHTTPServiceDataResponse
-		returnMessage string
-		err           error
-	)
-
-	defer func() {
-		if err != nil {
-			resp.Response.ReturnCode = UnexpectedError
-			resp.Response.Message = returnMessage
-		}
-
-		err = service.Listener.Encode(w, &resp)
-		logger.Response(service.Name, resp, resp.Response.ReturnCode, ReturnCodeToString(resp.Response.ReturnCode), err)
-	}()
-
-	resp.HttpRestServiceData = service.GetHTTPStruct()
-	return
-}
-
-func (service *HTTPRestService) GetHTTPStruct() HttpRestServiceData {
+func (service *HTTPRestService) getHTTPRestDataHandler(w http.ResponseWriter, r *http.Request) {
 	service.RLock()
 	defer service.RUnlock()
-
-	return HttpRestServiceData{
-		PodIPIDByPodInterfaceKey: service.PodIPIDByPodInterfaceKey,
-		PodIPConfigState:         service.PodIPConfigState,
-		IPAMPoolMonitor:          service.IPAMPoolMonitor.GetStateSnapshot(),
+	resp := GetHTTPServiceDataResponse{
+		HttpRestServiceData: HttpRestServiceData{
+			PodIPIDByPodInterfaceKey: service.PodIPIDByPodInterfaceKey,
+			PodIPConfigState:         service.PodIPConfigState,
+			IPAMPoolMonitor:          service.IPAMPoolMonitor.GetStateSnapshot(),
+		},
 	}
+	err := service.Listener.Encode(w, &resp)
+	logger.Response(service.Name, resp, resp.Response.ReturnCode, ReturnCodeToString(resp.Response.ReturnCode), err)
 }
 
 func (service *HTTPRestService) getIPAddressesHandler(w http.ResponseWriter, r *http.Request) {
