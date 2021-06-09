@@ -125,15 +125,15 @@ func (service *HTTPRestService) MarkIPAsPendingRelease(totalIpsToRelease int) (m
 }
 
 func (service *HTTPRestService) updateIPConfigState(ipId string, updatedState cns.IPConfigState, podInfo cns.PodInfo) (cns.IPConfigurationStatus, error) {
-	if ipConfig, found := service.PodIPConfigState[ipId]; found {
-		logger.Printf("[updateIPConfigState] Changing IpId [%s] state to [%s], podInfo [%+v]. Current config [%+v]", ipId, updatedState, podInfo, ipConfig)
-		ipConfig.State = updatedState
-		ipConfig.PodInfo = podInfo
-		service.PodIPConfigState[ipId] = ipConfig
-		return ipConfig, nil
+	ipConfig, ok := service.PodIPConfigState[ipId]
+	if !ok {
+		return ipConfig, fmt.Errorf("[updateIPConfigState] Failed to update state %s for the IPConfig. ID %s not found PodIPConfigState", updatedState, ipId)
 	}
-
-	return cns.IPConfigurationStatus{}, fmt.Errorf("[updateIPConfigState] Failed to update state %s for the IPConfig. ID %s not found PodIPConfigState", updatedState, ipId)
+	logger.Printf("[updateIPConfigState] Changing IpId [%s] state to [%s], orchestratorContext [%s]. Current config [%+v]", ipId, updatedState, podInfo, ipConfig)
+	ipConfig.State = updatedState
+	ipConfig.PodInfo = podInfo
+	service.PodIPConfigState[ipId] = ipConfig
+	return ipConfig, nil
 }
 
 // MarkIpsAsAvailableUntransacted will update pending programming IPs to available if NMAgent side's programmed nc version keep up with nc version.
