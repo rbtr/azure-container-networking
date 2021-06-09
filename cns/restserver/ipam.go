@@ -177,34 +177,12 @@ func (service *HTTPRestService) GetPodIPConfigState() map[string]cns.IPConfigura
 }
 
 func (service *HTTPRestService) getPodIPIDByOrchestratorContexthandler(w http.ResponseWriter, r *http.Request) {
-	var (
-		resp          cns.GetPodContextResponse
-		statusCode    int
-		returnMessage string
-		err           error
-	)
-
-	statusCode = UnexpectedError
-
-	defer func() {
-		if err != nil {
-			resp.Response.ReturnCode = statusCode
-			resp.Response.Message = returnMessage
-		}
-
-		err = service.Listener.Encode(w, &resp)
-		logger.Response(service.Name, resp, resp.Response.ReturnCode, ReturnCodeToString(resp.Response.ReturnCode), err)
-	}()
-
-	resp.PodContext = service.GetPodIPIDByOrchestratorContext()
-
-	return
-}
-
-func (service *HTTPRestService) GetPodIPIDByOrchestratorContext() map[string]string {
 	service.RLock()
 	defer service.RUnlock()
-	return service.PodIPIDByPodInterfaceKey
+	var resp cns.GetPodContextResponse
+	resp.PodContext = service.PodIPIDByPodInterfaceKey
+	err := service.Listener.Encode(w, &resp)
+	logger.Response(service.Name, resp, resp.Response.ReturnCode, ReturnCodeToString(resp.Response.ReturnCode), err)
 }
 
 func (service *HTTPRestService) GetHTTPRestDataHandler(w http.ResponseWriter, r *http.Request) {
