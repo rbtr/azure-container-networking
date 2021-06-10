@@ -136,7 +136,7 @@ func (service *HTTPRestService) updateIPConfigStateUnsafe(ipId string, updatedSt
 	return ipConfig, nil
 }
 
-// MarkIpsAsAvailableUntransacted will update pending programming IPs to available if NMAgent side's programmed nc version keep up with nc version.
+// MarkIpsAsAvailableUnsafe will update pending programming IPs to available if NMAgent side's programmed nc version keep up with nc version.
 // Note: this func is an untransacted API as the caller will take a Service lock
 func (service *HTTPRestService) MarkIpsAsAvailableUnsafe(ncID string, newHostNCVersion int) {
 	// Check whether it exist in service state and get the related nc info
