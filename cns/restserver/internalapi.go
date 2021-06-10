@@ -190,7 +190,7 @@ func (service *HTTPRestService) SyncHostNCVersion(ctx context.Context, channelMo
 						logger.Errorf("Can't find NC with ID %s in service state, stop updating this host NC version", ncID)
 					} else {
 						if channelMode == cns.CRD {
-							service.MarkIpsAsAvailableUntransacted(ncInfo.ID, newHostNCVersion)
+							service.MarkIpsAsAvailableUnsafe(ncInfo.ID, newHostNCVersion)
 						}
 						oldHostNCVersion := ncInfo.HostVersion
 						ncInfo.HostVersion = strconv.Itoa(newHostNCVersion)

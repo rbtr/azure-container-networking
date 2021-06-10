@@ -84,47 +84,47 @@ func (service *HTTPRestService) releaseIPConfigHandler(w http.ResponseWriter, r 
 }
 
 // MarkIPAsPendingRelease will set the IPs which are in PendingProgramming or Available to PendingRelease state
-// It will try to update [totalIpsToRelease]  number of ips.
-func (service *HTTPRestService) MarkIPAsPendingRelease(totalIpsToRelease int) (map[string]cns.IPConfigurationStatus, error) {
-	pendingReleasedIps := make(map[string]cns.IPConfigurationStatus)
+// It will try to update [totalIpsToRelease] number of ips.
+func (service *HTTPRestService) MarkIPAsPendingRelease(totalIPsToRelease int) (map[string]cns.IPConfigurationStatus, error) {
 	service.Lock()
 	defer service.Unlock()
 
-	for uuid, existingIpConfig := range service.PodIPConfigState {
-		if existingIpConfig.State == cns.PendingProgramming {
-			updatedIpConfig, err := service.updateIPConfigState(uuid, cns.PendingRelease, existingIpConfig.PodInfo)
-			if err != nil {
-				return nil, err
-			}
+	var releasedIPs = map[string]cns.IPConfigurationStatus{}
+	var availableIPs, pendingProgrammingIPs []string
 
-			pendingReleasedIps[uuid] = updatedIpConfig
-			if len(pendingReleasedIps) == totalIpsToRelease {
-				return pendingReleasedIps, nil
-			}
+	for uuid, existingIPConfig := range service.PodIPConfigState {
+		if existingIPConfig.State == cns.PendingProgramming {
+			pendingProgrammingIPs = append(pendingProgrammingIPs, uuid)
+		}
+		if existingIPConfig.State == cns.Available {
+			availableIPs = append(availableIPs, uuid)
 		}
 	}
 
-	// if not all expected IPs are set to PendingRelease, then check the Available IPs
-	for uuid, existingIpConfig := range service.PodIPConfigState {
-		if existingIpConfig.State == cns.Available {
-			updatedIpConfig, err := service.updateIPConfigState(uuid, cns.PendingRelease, existingIpConfig.PodInfo)
-			if err != nil {
-				return nil, err
-			}
+	// we want to release the PendingProgrammingIPs first
+	releaseableIPs := append(pendingProgrammingIPs, availableIPs...)
 
-			pendingReleasedIps[uuid] = updatedIpConfig
-
-			if len(pendingReleasedIps) == totalIpsToRelease {
-				return pendingReleasedIps, nil
-			}
+	// to release efficiently, we want to iterate through all of the releaseableIPs,
+	// releasing up to the number of totalIPsToRelease.
+	for i := 0; i < len(releaseableIPs) && len(releasedIPs) < totalIPsToRelease; i++ {
+		uuid := releaseableIPs[i]
+		releasedIPConfig, err := service.updateIPConfigStateUnsafe(uuid, cns.PendingRelease, service.PodIPConfigState[uuid].OrchestratorContext)
+		if err != nil {
+			logger.Errorf("error releasing IP %s: %v", uuid, err)
+			continue
 		}
+		releasedIPs[uuid] = releasedIPConfig
 	}
 
-	logger.Printf("[MarkIPAsPendingRelease] Set total ips to PendingRelease %d, expected %d", len(pendingReleasedIps), totalIpsToRelease)
-	return pendingReleasedIps, nil
+	var err error
+	if len(releasedIPs) < totalIPsToRelease {
+		err = fmt.Errorf("released %d/%d releaseable IPs, needed to release %d", len(releasedIPs), len(releaseableIPs), totalIPsToRelease)
+	}
+	logger.Printf("[MarkIPAsPendingRelease] Set total IPs to PendingRelease %d, expected %d", len(releasedIPs), totalIPsToRelease)
+	return releasedIPs, err
 }
 
-func (service *HTTPRestService) updateIPConfigState(ipId string, updatedState cns.IPConfigState, podInfo cns.PodInfo) (cns.IPConfigurationStatus, error) {
+func (service *HTTPRestService) updateIPConfigStateUnsafe(ipId string, updatedState cns.IPConfigState, podInfo cns.PodInfo) (cns.IPConfigurationStatus, error) {
 	ipConfig, ok := service.PodIPConfigState[ipId]
 	if !ok {
 		return ipConfig, fmt.Errorf("[updateIPConfigState] Failed to update state %s for the IPConfig. ID %s not found PodIPConfigState", updatedState, ipId)
@@ -138,7 +138,7 @@ func (service *HTTPRestService) updateIPConfigState(ipId string, updatedState cn
 
 // MarkIpsAsAvailableUntransacted will update pending programming IPs to available if NMAgent side's programmed nc version keep up with nc version.
 // Note: this func is an untransacted API as the caller will take a Service lock
-func (service *HTTPRestService) MarkIpsAsAvailableUntransacted(ncID string, newHostNCVersion int) {
+func (service *HTTPRestService) MarkIpsAsAvailableUnsafe(ncID string, newHostNCVersion int) {
 	// Check whether it exist in service state and get the related nc info
 	if ncInfo, exist := service.state.ContainerStatus[ncID]; !exist {
 		logger.Errorf("Can't find NC with ID %s in service state, stop updating its pending programming IP status", ncID)
@@ -154,7 +154,7 @@ func (service *HTTPRestService) MarkIpsAsAvailableUntransacted(ncID string, newH
 				if ipConfigStatus, exist := service.PodIPConfigState[uuid]; !exist {
 					logger.Errorf("IP %s with uuid as %s exist in service state Secondary IP list but can't find in PodIPConfigState", ipConfigStatus.IPAddress, uuid)
 				} else if ipConfigStatus.State == cns.PendingProgramming && secondaryIPConfigs.NCVersion <= newHostNCVersion {
-					_, err := service.updateIPConfigState(uuid, cns.Available, nil)
+					_, err := service.updateIPConfigStateUnsafe(uuid, cns.Available, nil)
 					if err != nil {
 						logger.Errorf("Error updating IPConfig [%+v] state to Available, err: %+v", ipConfigStatus, err)
 					}
@@ -257,8 +257,8 @@ func (service *HTTPRestService) GetPendingReleaseIPConfigs() []cns.IPConfigurati
 }
 
 //SetIPConfigAsAllocated takes a lock of the service, and sets the ipconfig in the CNS state as allocated, does not take a lock
-func (service *HTTPRestService) setIPConfigAsAllocated(ipconfig cns.IPConfigurationStatus, podInfo cns.PodInfo) (cns.IPConfigurationStatus, error) {
-	ipconfig, err := service.updateIPConfigState(ipconfig.ID, cns.Allocated, podInfo)
+func (service *HTTPRestService) setIPConfigAsAllocatedUnsafe(ipconfig cns.IPConfigurationStatus, podInfo cns.PodInfo) (cns.IPConfigurationStatus, error) {
+	ipconfig, err := service.updateIPConfigStateUnsafe(ipconfig.ID, cns.Allocated, podInfo)
 	if err != nil {
 		return cns.IPConfigurationStatus{}, err
 	}
@@ -268,8 +268,8 @@ func (service *HTTPRestService) setIPConfigAsAllocated(ipconfig cns.IPConfigurat
 }
 
 //SetIPConfigAsAllocated and sets the ipconfig in the CNS state as allocated, does not take a lock
-func (service *HTTPRestService) setIPConfigAsAvailable(ipconfig cns.IPConfigurationStatus, podInfo cns.PodInfo) (cns.IPConfigurationStatus, error) {
-	ipconfig, err := service.updateIPConfigState(ipconfig.ID, cns.Available, nil)
+func (service *HTTPRestService) setIPConfigAsAvailableUnsafe(ipconfig cns.IPConfigurationStatus, podInfo cns.PodInfo) (cns.IPConfigurationStatus, error) {
+	ipconfig, err := service.updateIPConfigStateUnsafe(ipconfig.ID, cns.Available, nil)
 	if err != nil {
 		return cns.IPConfigurationStatus{}, err
 	}
@@ -299,7 +299,7 @@ func (service *HTTPRestService) releaseIPConfig(podInfo cns.PodInfo) error {
 	}
 
 	logger.Printf("[releaseIPConfig] Releasing IP %+v for pod %+v", ipconfig.IPAddress, podInfo)
-	_, err := service.setIPConfigAsAvailable(ipconfig, podInfo)
+	_, err := service.setIPConfigAsAvailableUnsafe(ipconfig, podInfo)
 	if err != nil {
 		return fmt.Errorf("[releaseIPConfig] failed to mark IPConfig [%+v] as Available. err: %w", ipconfig, err)
 	}
@@ -370,7 +370,7 @@ func (service *HTTPRestService) AllocateDesiredIPConfig(podInfo cns.PodInfo, des
 			} else if ipConfig.State == cns.Available || ipConfig.State == cns.PendingProgramming {
 				// This race can happen during restart, where CNS state is lost and thus we have lost the NC programmed version
 				// As part of reconcile, we mark IPs as Allocated which are already allocated to PODs (listed from APIServer)
-				_, err := service.setIPConfigAsAllocated(ipConfig, podInfo)
+				_, err := service.setIPConfigAsAllocatedUnsafe(ipConfig, podInfo)
 				if err != nil {
 					return podIpInfo, err
 				}
@@ -398,7 +398,7 @@ func (service *HTTPRestService) AllocateAnyAvailableIPConfig(podInfo cns.PodInfo
 		if ipState.State != cns.Available {
 			continue
 		}
-		_, err := service.setIPConfigAsAllocated(ipState, podInfo)
+		_, err := service.setIPConfigAsAllocatedUnsafe(ipState, podInfo)
 		if err != nil {
 			return podIpInfo, err
 		}

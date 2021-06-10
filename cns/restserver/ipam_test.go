@@ -11,6 +11,7 @@ import (
 	"github.com/Azure/azure-container-networking/cns"
 	"github.com/Azure/azure-container-networking/cns/common"
 	"github.com/Azure/azure-container-networking/cns/fakes"
+	"github.com/stretchr/testify/assert"
 )
 
 var (
@@ -589,11 +590,11 @@ func TestIPAMMarkIPCountAsPending(t *testing.T) {
 		t.Fatalf("Unexpected failure releasing IP: %+v", err)
 	}
 
-	// Try to release IP when no IP can be released. It will not return error and return 0 IPs
-	ips, err = svc.MarkIPAsPendingRelease(1)
-	if err != nil || len(ips) != 0 {
-		t.Fatalf("We are not either expecting err [%v] or ips as non empty [%v]", err, ips)
-	}
+	// Try to release IP when no IP can be released. Returns error and releasedIPs < requestedIPs
+	requestReleaseCount := 1
+	ips, err = svc.MarkIPAsPendingRelease(requestReleaseCount)
+	assert.Error(t, err, "expected err when unable to release requested count of IPs")
+	assert.Less(t, len(ips), requestReleaseCount, "released more IPs than expected")
 }
 
 func TestIPAMMarkIPAsPendingWithPendingProgrammingIPs(t *testing.T) {
