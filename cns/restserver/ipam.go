@@ -15,23 +15,18 @@ import (
 
 // used to request an IPConfig from the CNS state
 func (service *HTTPRestService) requestIPConfigHandler(w http.ResponseWriter, r *http.Request) {
-	var (
-		err             error
-		ipconfigRequest cns.IPConfigRequest
-		podIpInfo       cns.PodIpInfo
-		returnCode      int
-		returnMessage   string
-	)
-
-	err = service.Listener.Decode(w, r, &ipconfigRequest)
 	operationName := "requestIPConfigHandler"
+
+	var ipconfigRequest cns.IPConfigRequest
+	err := service.Listener.Decode(w, r, &ipconfigRequest)
 	logger.Request(service.Name+operationName, ipconfigRequest, err)
 	if err != nil {
 		return
 	}
 
 	// retrieve ipconfig from nc
-	_, returnCode, returnMessage = service.validateIpConfigRequest(ipconfigRequest)
+	_, returnCode, returnMessage := service.validateIpConfigRequest(ipconfigRequest)
+	var podIpInfo cns.PodIpInfo
 	if returnCode == Success {
 		if podIpInfo, err = requestIPConfigHelper(service, ipconfigRequest); err != nil {
 			returnCode = FailedToAllocateIpConfig
