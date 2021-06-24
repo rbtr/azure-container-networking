@@ -103,7 +103,7 @@ func (service *HTTPRestService) MarkIPAsPendingRelease(totalIPsToRelease int) (m
 	// releasing up to the number of totalIPsToRelease.
 	for i := 0; i < len(releaseableIPs) && len(releasedIPs) < totalIPsToRelease; i++ {
 		uuid := releaseableIPs[i]
-		releasedIPConfig, err := service.updateIPConfigStateUnsafe(uuid, cns.PendingRelease, service.PodIPConfigState[uuid].OrchestratorContext)
+		releasedIPConfig, err := service.updateIPConfigStateUnsafe(uuid, cns.PendingRelease, service.PodIPConfigState[uuid].PodInfo)
 		if err != nil {
 			logger.Errorf("error releasing IP %s: %v", uuid, err)
 			continue
