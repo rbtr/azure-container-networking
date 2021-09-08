@@ -185,44 +185,45 @@ func (service *HTTPRestService) GetPodIPConfigState() map[string]cns.IPConfigura
 func (service *HTTPRestService) handleDebugPodContext(w http.ResponseWriter, r *http.Request) {
 	service.RLock()
 	defer service.RUnlock()
-	resp := &cns.GetPodContextResponse{
+	resp := cns.GetPodContextResponse{
 		PodContext: service.PodIPIDByPodInterfaceKey,
 	}
-	err := service.Listener.Encode(w, resp)
+	err := service.Listener.Encode(w, &resp)
 	logger.Response(service.Name, resp, resp.Response.ReturnCode, err)
 }
 
 func (service *HTTPRestService) handleDebugRestData(w http.ResponseWriter, r *http.Request) {
 	service.RLock()
 	defer service.RUnlock()
-	resp := &GetHTTPServiceDataResponse{
+	resp := GetHTTPServiceDataResponse{
 		HTTPRestServiceData: HTTPRestServiceData{
 			PodIPIDByPodInterfaceKey: service.PodIPIDByPodInterfaceKey,
 			PodIPConfigState:         service.PodIPConfigState,
 			IPAMPoolMonitor:          service.IPAMPoolMonitor.GetStateSnapshot(),
 		},
 	}
-	err := service.Listener.Encode(w, resp)
+	err := service.Listener.Encode(w, &resp)
 	logger.Response(service.Name, resp, resp.Response.ReturnCode, err)
 }
 
 func (service *HTTPRestService) handleDebugIPAddresses(w http.ResponseWriter, r *http.Request) {
-	req := &cns.GetIPAddressesRequest{}
-	if err := service.Listener.Decode(w, r, req); err != nil {
-		resp := &cns.GetIPAddressStatusResponse{
+	var req cns.GetIPAddressesRequest
+	if err := service.Listener.Decode(w, r, &req); err != nil {
+		resp := cns.GetIPAddressStatusResponse{
 			Response: cns.Response{
 				ReturnCode: types.UnexpectedError,
 				Message:    err.Error(),
 			},
 		}
-		err = service.Listener.Encode(w, resp)
+		err = service.Listener.Encode(w, &resp)
 		logger.ResponseEx(service.Name, req, resp, resp.Response.ReturnCode, err)
+		return
 	}
 	// Get all IPConfigs matching a state and return in the response
-	resp := &cns.GetIPAddressStatusResponse{
+	resp := cns.GetIPAddressStatusResponse{
 		IPConfigurationStatus: filter.MatchAnyIPConfigState(service.PodIPConfigState, filter.PredicatesForStates(req.IPConfigStateFilter...)...),
 	}
-	err := service.Listener.Encode(w, resp)
+	err := service.Listener.Encode(w, &resp)
 	logger.ResponseEx(service.Name, req, resp, resp.Response.ReturnCode, err)
 }
 
