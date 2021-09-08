@@ -178,6 +178,7 @@ azure-vnet-telemetry: $(CNI_BUILD_DIR)/azure-vnet-telemetry$(EXE_EXT)
 acncli: $(ACNCLI_BUILD_DIR)/acncli$(EXE_EXT) acncli-archive
 
 # Tool paths
+COBRA := $(TOOLS_BIN_DIR)/cobra
 CONTROLLER_GEN := $(TOOLS_BIN_DIR)/controller-gen
 GOCOV := $(TOOLS_BIN_DIR)/gocov
 GOCOV_XML := $(TOOLS_BIN_DIR)/gocov-xml
@@ -509,6 +510,11 @@ version: ## prints the version
 
 $(TOOLS_DIR)/go.mod:
 	cd $(TOOLS_DIR); go mod init && go mod tidy
+
+$(COBRA): $(TOOLS_DIR)/go.mod
+	cd $(TOOLS_DIR); go mod download; go build -tags=tools -o bin/cobra github.com/spf13/cobra
+
+cobra: $(COBRA) ## Build cobra
 
 $(CONTROLLER_GEN): $(TOOLS_DIR)/go.mod
 	cd $(TOOLS_DIR); go mod download; go build -tags=tools -o bin/controller-gen sigs.k8s.io/controller-tools/cmd/controller-gen
