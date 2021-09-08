@@ -1,0 +1,11 @@
+{
+    "PodContext": {
+        "coredns-d4866bcb7-ndtzk:kube-system": "a5640a86-0973-4680-add5-2ee9f6d56509",
+        "metrics-server-97958786-2z4kn:kube-system": "f1b5ea7e-16dd-4e8b-8c48-2ccabda1638c",
+        "tunnelfront-7f6d6f9d74-dxdl7:kube-system": "223ca679-fb78-44b3-b5c5-8649649a5db7"
+    },
+    "Response": {
+        "ReturnCode": 0,
+        "Message": ""
+    }
+}

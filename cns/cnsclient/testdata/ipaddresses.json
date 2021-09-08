@@ -1,0 +1,47 @@
+{
+    "IPConfigurationStatus": [
+        {
+            "NCID": "f30b338b-d44c-49e6-a8aa-f249778b8a76",
+            "ID": "a5640a86-0973-4680-add5-2ee9f6d56509",
+            "IPAddress": "10.241.0.5",
+            "State": "Allocated",
+            "PodInfo": {
+                "PodName": "coredns-d4866bcb7-ndtzk",
+                "PodNamespace": "kube-system",
+                "PodInfraContainerID": "",
+                "PodInterfaceID": "",
+                "Version": 0
+            }
+        },
+        {
+            "NCID": "f30b338b-d44c-49e6-a8aa-f249778b8a76",
+            "ID": "223ca679-fb78-44b3-b5c5-8649649a5db7",
+            "IPAddress": "10.241.0.17",
+            "State": "Allocated",
+            "PodInfo": {
+                "PodName": "tunnelfront-7f6d6f9d74-dxdl7",
+                "PodNamespace": "kube-system",
+                "PodInfraContainerID": "",
+                "PodInterfaceID": "",
+                "Version": 0
+            }
+        },
+        {
+            "NCID": "f30b338b-d44c-49e6-a8aa-f249778b8a76",
+            "ID": "f1b5ea7e-16dd-4e8b-8c48-2ccabda1638c",
+            "IPAddress": "10.241.0.7",
+            "State": "Allocated",
+            "PodInfo": {
+                "PodName": "metrics-server-97958786-2z4kn",
+                "PodNamespace": "kube-system",
+                "PodInfraContainerID": "",
+                "PodInterfaceID": "",
+                "Version": 0
+            }
+        }
+    ],
+    "Response": {
+        "ReturnCode": 0,
+        "Message": ""
+    }
+}
