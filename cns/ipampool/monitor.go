@@ -97,6 +97,18 @@ func (pm *Monitor) Start(ctx context.Context) error {
 	}
 }
 
+// TODO(rbtr): it turns out that all of this branching logic to size the pool can be replaced with this math:
+// func (s state) scale() state {
+// 	prev := s.requested
+// 	if s.free < int(float64(s.batch)*s.minFree) {
+// 		s.requested = s.batch * int(math.Ceil(s.minFree+(float64(s.requested-s.free)/float64(s.batch))))
+// 	} else {
+// 		s.requested = s.batch * int(math.Floor(s.maxFree+(float64(s.requested-s.free)/float64(s.batch))))
+// 	}
+// 	s.free += s.requested - prev
+// 	return s
+// }
+
 func (pm *Monitor) reconcile(ctx context.Context) error {
 	cnsPodIPConfigCount := len(pm.httpService.GetPodIPConfigState())
 	pendingProgramCount := len(pm.httpService.GetPendingProgramIPConfigs()) // TODO: add pending program count to real cns
