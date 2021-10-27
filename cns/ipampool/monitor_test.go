@@ -31,7 +31,7 @@ func (d *directUpdatePoolMonitor) Update(nnc *v1alpha.NodeNetworkConfig) {
 	d.m.state.minFreeCount, d.m.state.maxFreeCount = CalculateMinFreeIPs(d.m.scaler), CalculateMaxFreeIPs(d.m.scaler)
 }
 
-type state struct {
+type fakestate struct {
 	allocatedIPCount        int
 	batchSize               int
 	ipConfigCount           int
@@ -40,7 +40,7 @@ type state struct {
 	requestThresholdPercent int
 }
 
-func initFakes(initState state) (*fakes.HTTPServiceFake, *fakes.RequestControllerFake, *Monitor) {
+func initFakes(initState fakestate) (*fakes.HTTPServiceFake, *fakes.RequestControllerFake, *Monitor) {
 	logger.InitLogger("testlogs", 0, 0, "./")
 
 	scalarUnits := v1alpha.Scaler{
@@ -63,7 +63,7 @@ func initFakes(initState state) (*fakes.HTTPServiceFake, *fakes.RequestControlle
 }
 
 func TestPoolSizeIncrease(t *testing.T) {
-	initState := state{
+	initState := fakestate{
 		batchSize:               10,
 		allocatedIPCount:        8,
 		ipConfigCount:           10,
@@ -96,7 +96,7 @@ func TestPoolSizeIncrease(t *testing.T) {
 }
 
 func TestPoolIncreaseDoesntChangeWhenIncreaseIsAlreadyInProgress(t *testing.T) {
-	initState := state{
+	initState := fakestate{
 		batchSize:               10,
 		allocatedIPCount:        8,
 		ipConfigCount:           10,
@@ -135,7 +135,7 @@ func TestPoolIncreaseDoesntChangeWhenIncreaseIsAlreadyInProgress(t *testing.T) {
 }
 
 func TestPoolSizeIncreaseIdempotency(t *testing.T) {
-	initState := state{
+	initState := fakestate{
 		batchSize:               10,
 		allocatedIPCount:        8,
 		ipConfigCount:           10,
@@ -161,7 +161,7 @@ func TestPoolSizeIncreaseIdempotency(t *testing.T) {
 }
 
 func TestPoolIncreasePastNodeLimit(t *testing.T) {
-	initState := state{
+	initState := fakestate{
 		batchSize:               16,
 		allocatedIPCount:        9,
 		ipConfigCount:           16,
@@ -181,7 +181,7 @@ func TestPoolIncreasePastNodeLimit(t *testing.T) {
 }
 
 func TestPoolIncreaseBatchSizeGreaterThanMaxPodIPCount(t *testing.T) {
-	initState := state{
+	initState := fakestate{
 		batchSize:               50,
 		allocatedIPCount:        16,
 		ipConfigCount:           16,
@@ -201,7 +201,7 @@ func TestPoolIncreaseBatchSizeGreaterThanMaxPodIPCount(t *testing.T) {
 }
 
 func TestPoolDecrease(t *testing.T) {
-	initState := state{
+	initState := fakestate{
 		batchSize:               10,
 		ipConfigCount:           20,
 		allocatedIPCount:        15,
@@ -235,7 +235,7 @@ func TestPoolDecrease(t *testing.T) {
 }
 
 func TestPoolSizeDecreaseWhenDecreaseHasAlreadyBeenRequested(t *testing.T) {
-	initState := state{
+	initState := fakestate{
 		batchSize:               10,
 		allocatedIPCount:        5,
 		ipConfigCount:           20,
@@ -274,7 +274,7 @@ func TestPoolSizeDecreaseWhenDecreaseHasAlreadyBeenRequested(t *testing.T) {
 }
 
 func TestDecreaseAndIncreaseToSameCount(t *testing.T) {
-	initState := state{
+	initState := fakestate{
 		batchSize:               10,
 		allocatedIPCount:        7,
 		ipConfigCount:           10,
@@ -319,7 +319,7 @@ func TestDecreaseAndIncreaseToSameCount(t *testing.T) {
 }
 
 func TestPoolSizeDecreaseToReallyLow(t *testing.T) {
-	initState := state{
+	initState := fakestate{
 		batchSize:               10,
 		allocatedIPCount:        23,
 		ipConfigCount:           30,
@@ -361,7 +361,7 @@ func TestPoolSizeDecreaseToReallyLow(t *testing.T) {
 }
 
 func TestDecreaseAfterNodeLimitReached(t *testing.T) {
-	initState := state{
+	initState := fakestate{
 		batchSize:               16,
 		allocatedIPCount:        20,
 		ipConfigCount:           30,
@@ -384,7 +384,7 @@ func TestDecreaseAfterNodeLimitReached(t *testing.T) {
 }
 
 func TestPoolDecreaseBatchSizeGreaterThanMaxPodIPCount(t *testing.T) {
-	initState := state{
+	initState := fakestate{
 		batchSize:               31,
 		allocatedIPCount:        30,
 		ipConfigCount:           30,
