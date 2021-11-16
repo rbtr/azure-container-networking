@@ -99,14 +99,16 @@ func (pm *Monitor) Start(ctx context.Context) error {
 }
 
 type state struct {
-	free      int
-	requested int
-	batch     int
-	minFree   float64
-	maxFree   float64
+	batch          int
+	free           int
+	pendingRelease int
+	requested      int
+	minFree        float64
+	maxFree        float64
 }
 
-// TODO(rbtr): it turns out that all of this branching logic to size the pool can be replaced with this math:
+// scale scales the ipam pool according to the state input and returns a new state object where the
+// pool size (via the requested and free parameters) is adjusted to be within the bounds of the scaler spec.
 func (s state) scale() state {
 	prev := s.requested
 	if s.free < int(float64(s.batch)*s.minFree) {
@@ -151,11 +153,12 @@ func (pm *Monitor) reconcile(ctx context.Context) error {
 	ipamUnallocatedIPCount.Set(float64(unallocatedIPConfigCount))
 
 	current := state{
-		free:      int(freeIPConfigCount),
-		requested: int(requestedIPConfigCount),
-		batch:     int(batchSize),
-		minFree:   float64(pm.scaler.RequestThresholdPercent) / 100, //nolint:gomnd // percent
-		maxFree:   float64(pm.scaler.ReleaseThresholdPercent) / 100, //nolint:gomnd // percent
+		batch:          int(batchSize),
+		free:           int(freeIPConfigCount),
+		pendingRelease: pendingReleaseIPCount,
+		requested:      int(requestedIPConfigCount),
+		minFree:        float64(pm.scaler.RequestThresholdPercent) / 100, //nolint:gomnd // percent
+		maxFree:        float64(pm.scaler.ReleaseThresholdPercent) / 100, //nolint:gomnd // percent
 	}
 	target := current.scale()
 	target.clamp(int(maxIPCount))
@@ -165,13 +168,13 @@ func (pm *Monitor) reconcile(ctx context.Context) error {
 	case target.requested > current.requested:
 		logger.Printf("[ipam-pool-monitor] Increasing pool size...%s ", msg)
 		metric.StartPoolIncreaseTimer(int(batchSize))
-		return pm.increasePoolSize(ctx, target)
+		return pm.increasePoolSize(ctx, current, target)
 
 	// pod count is decreasing
 	case target.requested < current.requested:
 		logger.Printf("[ipam-pool-monitor] Decreasing pool size...%s ", msg)
 		metric.StartPoolDecreaseTimer(int(batchSize))
-		return pm.decreasePoolSize(ctx, target, pendingReleaseIPCount)
+		return pm.decreasePoolSize(ctx, current, target, pendingReleaseIPCount)
 
 	// CRD has reconciled CNS state, and target spec is now the same size as the state
 	// free to remove the IP's from the CRD
@@ -188,7 +191,7 @@ func (pm *Monitor) reconcile(ctx context.Context) error {
 	return nil
 }
 
-func (pm *Monitor) increasePoolSize(ctx context.Context, target state) error {
+func (pm *Monitor) increasePoolSize(ctx context.Context, current, target state) error {
 	tempNNCSpec := pm.createNNCSpecForCRD()
 	tempNNCSpec.RequestedIPCount = int64(target.requested)
 	logger.Printf("[ipam-pool-monitor] Increasing pool size, Current Pool Size: %v, Updated Requested IP Count: %v, Pods with IP's:%v, ToBeDeleted Count: %v",
@@ -202,18 +205,13 @@ func (pm *Monitor) increasePoolSize(ctx context.Context, target state) error {
 	return nil
 }
 
-func (pm *Monitor) decreasePoolSize(ctx context.Context, target state, existingPendingReleaseIPCount int) error {
+func (pm *Monitor) decreasePoolSize(ctx context.Context, current, target state, existingPendingReleaseIPCount int) error {
 	// mark n number of IP's as pending
 	var newIpsMarkedAsPending bool
 	var pendingIPAddresses map[string]cns.IPConfigurationStatus
-	updatedRequestedIPCount := target.requested
 
-	// Ensure the updated requested IP count is a multiple of the batch size
-	previouslyRequestedIPCount := int(pm.spec.RequestedIPCount)
-
-	decreaseIPCountBy := previouslyRequestedIPCount - updatedRequestedIPCount
-
-	logger.Printf("[ipam-pool-monitor] updatedRequestedIPCount %v", updatedRequestedIPCount)
+	decreaseIPCountBy := current.requested - target.requested
+	logger.Printf("[ipam-pool-monitor] updatedRequestedIPCount %v", target.requested)
 
 	if pm.state.notInUseCount == 0 ||
 		pm.state.notInUseCount < existingPendingReleaseIPCount {
