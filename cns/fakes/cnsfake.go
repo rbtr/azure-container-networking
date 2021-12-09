@@ -209,34 +209,10 @@ func (fake *HTTPServiceFake) SyncNodeStatus(string, string, string, json.RawMess
 // SyncHostNCVersion will update HostVersion in containerstatus.
 func (fake *HTTPServiceFake) SyncHostNCVersion(context.Context, string, time.Duration) {}
 
-func (fake *HTTPServiceFake) GetPendingProgramIPConfigs() []cns.IPConfigurationStatus {
-	ipconfigs := []cns.IPConfigurationStatus{}
-	for _, ipconfig := range fake.IPStateManager.PendingProgramIPConfigState {
-		ipconfigs = append(ipconfigs, ipconfig)
-	}
-	return ipconfigs
-}
-
-func (fake *HTTPServiceFake) GetAvailableIPConfigs() []cns.IPConfigurationStatus {
-	ipconfigs := []cns.IPConfigurationStatus{}
-	for _, ipconfig := range fake.IPStateManager.AvailableIPConfigState {
-		ipconfigs = append(ipconfigs, ipconfig)
-	}
-	return ipconfigs
-}
-
-func (fake *HTTPServiceFake) GetAssignedIPConfigs() []cns.IPConfigurationStatus {
-	ipconfigs := []cns.IPConfigurationStatus{}
-	for _, ipconfig := range fake.IPStateManager.AssignedIPConfigState {
-		ipconfigs = append(ipconfigs, ipconfig)
-	}
-	return ipconfigs
-}
-
 func (fake *HTTPServiceFake) GetPendingReleaseIPConfigs() []cns.IPConfigurationStatus {
 	ipconfigs := []cns.IPConfigurationStatus{}
-	for _, ipconfig := range fake.IPStateManager.PendingReleaseIPConfigState {
-		ipconfigs = append(ipconfigs, ipconfig)
+	for key := range fake.IPStateManager.PendingReleaseIPConfigState {
+		ipconfigs = append(ipconfigs, fake.IPStateManager.PendingReleaseIPConfigState[key])
 	}
 	return ipconfigs
 }
@@ -244,14 +220,17 @@ func (fake *HTTPServiceFake) GetPendingReleaseIPConfigs() []cns.IPConfigurationS
 // Return union of all state maps
 func (fake *HTTPServiceFake) GetPodIPConfigState() map[string]cns.IPConfigurationStatus {
 	ipconfigs := make(map[string]cns.IPConfigurationStatus)
-	for key, val := range fake.IPStateManager.AssignedIPConfigState {
-		ipconfigs[key] = val
+	for key := range fake.IPStateManager.AssignedIPConfigState {
+		ipconfigs[key] = fake.IPStateManager.AssignedIPConfigState[key]
 	}
-	for key, val := range fake.IPStateManager.AvailableIPConfigState {
-		ipconfigs[key] = val
+	for key := range fake.IPStateManager.AvailableIPConfigState {
+		ipconfigs[key] = fake.IPStateManager.AvailableIPConfigState[key]
 	}
-	for key, val := range fake.IPStateManager.PendingReleaseIPConfigState {
-		ipconfigs[key] = val
+	for key := range fake.IPStateManager.PendingReleaseIPConfigState {
+		ipconfigs[key] = fake.IPStateManager.PendingReleaseIPConfigState[key]
+	}
+	for key := range fake.IPStateManager.PendingProgramIPConfigState {
+		ipconfigs[key] = fake.IPStateManager.PendingProgramIPConfigState[key]
 	}
 	return ipconfigs
 }

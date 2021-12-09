@@ -57,8 +57,10 @@ func initFakes(state testState) (*fakes.HTTPServiceFake, *fakes.RequestControlle
 
 	poolmonitor := NewMonitor(fakecns, &fakeNodeNetworkConfigUpdater{fakerc.NNC}, &Options{RefreshDelay: 100 * time.Second})
 	poolmonitor.metastate = metaState{
-		batch: state.batch,
-		max:   state.max,
+		batch:          state.batch,
+		max:            state.max,
+		maxFreePercent: maxFreePercent(scalarUnits),
+		minFreePercent: minFreePercent(scalarUnits),
 	}
 	fakecns.PoolMonitor = &directUpdatePoolMonitor{m: poolmonitor}
 	if err := fakecns.SetNumberOfAssignedIPs(state.assigned); err != nil {
@@ -243,10 +245,10 @@ func TestPoolDecrease(t *testing.T) {
 func TestPoolSizeDecreaseWhenDecreaseHasAlreadyBeenRequested(t *testing.T) {
 	initState := testState{
 		batch:                   10,
-		assigned:                5,
+		assigned:                4,
 		allocated:               20,
-		requestThresholdPercent: 30,
-		releaseThresholdPercent: 100,
+		requestThresholdPercent: 50,
+		releaseThresholdPercent: 150,
 		max:                     30,
 	}
 
@@ -344,15 +346,6 @@ func TestPoolSizeDecreaseToReallyLow(t *testing.T) {
 	assert.NoError(t, fakecns.SetNumberOfAssignedIPs(3))
 
 	// Pool monitor does nothing, as the current number of IPs falls in the threshold
-	assert.NoError(t, poolmonitor.reconcile(context.Background()))
-
-	// Ensure the size of the requested spec is still the same
-	assert.Len(t, poolmonitor.spec.IPsNotInUse, int(initState.batch))
-
-	// Ensure the request ipcount is now one batch size smaller than the initial IP count
-	assert.Equal(t, initState.allocated-initState.batch, poolmonitor.spec.RequestedIPCount)
-
-	// Reconcile again, it should release the second batch
 	assert.NoError(t, poolmonitor.reconcile(context.Background()))
 
 	// Ensure the size of the requested spec is still the same

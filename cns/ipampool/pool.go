@@ -22,8 +22,6 @@ type ipPool struct {
 	pendingRelease int64
 	// requested are the IPs CNS has requested that it be allocated.
 	requested int64
-
-	// expectedUnassigned int64
 }
 
 // unassigned is the current unassigned IP count.

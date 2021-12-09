@@ -162,6 +162,54 @@ func TestScale(t *testing.T) {
 			},
 			want: 16,
 		},
+		{
+			name:    "noop at exactly scale up threshold",
+			minFree: 0.5,
+			maxFree: 1.5,
+			batch:   10,
+			in: ipPool{
+				requested: 10,
+				allocated: 10,
+				assigned:  5,
+			},
+			want: 10,
+		},
+		{
+			name:    "noop at exactly scale down threshold",
+			minFree: 0.5,
+			maxFree: 1.5,
+			batch:   10,
+			in: ipPool{
+				requested: 20,
+				allocated: 20,
+				assigned:  5,
+			},
+			want: 20,
+		},
+		{
+			name:    "up just over scale up threshold",
+			minFree: 0.5,
+			maxFree: 1.5,
+			batch:   10,
+			in: ipPool{
+				requested: 10,
+				allocated: 10,
+				assigned:  6,
+			},
+			want: 20,
+		},
+		{
+			name:    "down just under scale down threshold",
+			minFree: 0.5,
+			maxFree: 1.5,
+			batch:   10,
+			in: ipPool{
+				requested: 20,
+				allocated: 20,
+				assigned:  4,
+			},
+			want: 10,
+		},
 	}
 	for _, tt := range tests {
 		tt := tt

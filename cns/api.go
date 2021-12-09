@@ -42,9 +42,6 @@ type HTTPService interface {
 	SendNCSnapShotPeriodically(context.Context, int)
 	SetNodeOrchestrator(*SetOrchestratorTypeRequest)
 	SyncNodeStatus(string, string, string, json.RawMessage) (types.ResponseCode, string)
-	GetPendingProgramIPConfigs() []IPConfigurationStatus
-	GetAvailableIPConfigs() []IPConfigurationStatus
-	GetAssignedIPConfigs() []IPConfigurationStatus
 	GetPendingReleaseIPConfigs() []IPConfigurationStatus
 	GetPodIPConfigState() map[string]IPConfigurationStatus
 	MarkIPAsPendingRelease(numberToMark int) (map[string]IPConfigurationStatus, error)
