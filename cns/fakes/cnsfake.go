@@ -4,14 +4,10 @@
 package fakes
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"sync"
-	"time"
 
 	"github.com/Azure/azure-container-networking/cns"
-	"github.com/Azure/azure-container-networking/cns/common"
 	"github.com/Azure/azure-container-networking/cns/types"
 )
 
@@ -45,92 +41,92 @@ func (stack *StringStack) Pop() (string, error) {
 	return res, nil
 }
 
-type IPStateManager struct {
-	PendingProgramIPConfigState map[string]cns.IPConfigurationStatus
-	AvailableIPConfigState      map[string]cns.IPConfigurationStatus
-	AssignedIPConfigState       map[string]cns.IPConfigurationStatus
-	PendingReleaseIPConfigState map[string]cns.IPConfigurationStatus
-	AvailableIPIDStack          StringStack
-	sync.RWMutex
+type IPStatusManager struct {
+	PendingProgramIPConfigStatus map[string]cns.IPConfigurationStatus
+	AvailableIPConfigStatus      map[string]cns.IPConfigurationStatus
+	AssignedIPConfigStatus       map[string]cns.IPConfigurationStatus
+	PendingReleaseIPConfigStatus map[string]cns.IPConfigurationStatus
+	AvailableIPIDStack           StringStack
+	rwmutex                      sync.RWMutex
 }
 
-func NewIPStateManager() IPStateManager {
-	return IPStateManager{
-		PendingProgramIPConfigState: make(map[string]cns.IPConfigurationStatus),
-		AvailableIPConfigState:      make(map[string]cns.IPConfigurationStatus),
-		AssignedIPConfigState:       make(map[string]cns.IPConfigurationStatus),
-		PendingReleaseIPConfigState: make(map[string]cns.IPConfigurationStatus),
-		AvailableIPIDStack:          StringStack{},
+func NewIPStatusManager() *IPStatusManager {
+	return &IPStatusManager{
+		PendingProgramIPConfigStatus: make(map[string]cns.IPConfigurationStatus),
+		AvailableIPConfigStatus:      make(map[string]cns.IPConfigurationStatus),
+		AssignedIPConfigStatus:       make(map[string]cns.IPConfigurationStatus),
+		PendingReleaseIPConfigStatus: make(map[string]cns.IPConfigurationStatus),
+		AvailableIPIDStack:           StringStack{},
 	}
 }
 
-func (ipm *IPStateManager) AddIPConfigs(ipconfigs []cns.IPConfigurationStatus) {
-	ipm.Lock()
-	defer ipm.Unlock()
-	for _, ipconfig := range ipconfigs {
-		switch ipconfig.GetState() {
+func (ipm *IPStatusManager) AddIPConfigs(ipconfigs []cns.IPConfigurationStatus) {
+	ipm.rwmutex.Lock()
+	defer ipm.rwmutex.Unlock()
+	for i := range ipconfigs {
+		switch ipconfigs[i].GetState() {
 		case types.PendingProgramming:
-			ipm.PendingProgramIPConfigState[ipconfig.ID] = ipconfig
+			ipm.PendingProgramIPConfigStatus[ipconfigs[i].ID] = ipconfigs[i]
 		case types.Available:
-			ipm.AvailableIPConfigState[ipconfig.ID] = ipconfig
-			ipm.AvailableIPIDStack.Push(ipconfig.ID)
+			ipm.AvailableIPConfigStatus[ipconfigs[i].ID] = ipconfigs[i]
+			ipm.AvailableIPIDStack.Push(ipconfigs[i].ID)
 		case types.Assigned:
-			ipm.AssignedIPConfigState[ipconfig.ID] = ipconfig
+			ipm.AssignedIPConfigStatus[ipconfigs[i].ID] = ipconfigs[i]
 		case types.PendingRelease:
-			ipm.PendingReleaseIPConfigState[ipconfig.ID] = ipconfig
+			ipm.PendingReleaseIPConfigStatus[ipconfigs[i].ID] = ipconfigs[i]
 		}
 	}
 }
 
-func (ipm *IPStateManager) RemovePendingReleaseIPConfigs(ipconfigNames []string) {
-	ipm.Lock()
-	defer ipm.Unlock()
+func (ipm *IPStatusManager) RemovePendingReleaseIPConfigs(ipconfigNames []string) {
+	ipm.rwmutex.Lock()
+	defer ipm.rwmutex.Unlock()
 	for _, name := range ipconfigNames {
-		delete(ipm.PendingReleaseIPConfigState, name)
+		delete(ipm.PendingReleaseIPConfigStatus, name)
 	}
 }
 
-func (ipm *IPStateManager) ReserveIPConfig() (cns.IPConfigurationStatus, error) {
-	ipm.Lock()
-	defer ipm.Unlock()
+func (ipm *IPStatusManager) ReserveIPConfig() (cns.IPConfigurationStatus, error) {
+	ipm.rwmutex.Lock()
+	defer ipm.rwmutex.Unlock()
 	id, err := ipm.AvailableIPIDStack.Pop()
 	if err != nil {
 		return cns.IPConfigurationStatus{}, err
 	}
-	ipc := ipm.AvailableIPConfigState[id]
+	ipc := ipm.AvailableIPConfigStatus[id]
 	ipc.SetState(types.Assigned)
-	ipm.AssignedIPConfigState[id] = ipc
-	delete(ipm.AvailableIPConfigState, id)
-	return ipm.AssignedIPConfigState[id], nil
+	ipm.AssignedIPConfigStatus[id] = ipc
+	delete(ipm.AvailableIPConfigStatus, id)
+	return ipm.AssignedIPConfigStatus[id], nil
 }
 
-func (ipm *IPStateManager) ReleaseIPConfig(ipconfigID string) (cns.IPConfigurationStatus, error) {
-	ipm.Lock()
-	defer ipm.Unlock()
-	ipc := ipm.AssignedIPConfigState[ipconfigID]
+func (ipm *IPStatusManager) ReleaseIPConfig(ipconfigID string) (cns.IPConfigurationStatus, error) {
+	ipm.rwmutex.Lock()
+	defer ipm.rwmutex.Unlock()
+	ipc := ipm.AssignedIPConfigStatus[ipconfigID]
 	ipc.SetState(types.Available)
-	ipm.AvailableIPConfigState[ipconfigID] = ipc
+	ipm.AvailableIPConfigStatus[ipconfigID] = ipc
 	ipm.AvailableIPIDStack.Push(ipconfigID)
-	delete(ipm.AssignedIPConfigState, ipconfigID)
-	return ipm.AvailableIPConfigState[ipconfigID], nil
+	delete(ipm.AssignedIPConfigStatus, ipconfigID)
+	return ipm.AvailableIPConfigStatus[ipconfigID], nil
 }
 
-func (ipm *IPStateManager) MarkIPAsPendingRelease(numberOfIPsToMark int) (map[string]cns.IPConfigurationStatus, error) {
-	ipm.Lock()
-	defer ipm.Unlock()
+func (ipm *IPStatusManager) MarkIPAsPendingRelease(numberOfIPsToMark int) (map[string]cns.IPConfigurationStatus, error) {
+	ipm.rwmutex.Lock()
+	defer ipm.rwmutex.Unlock()
 
 	var err error
 
 	pendingReleaseIPs := make(map[string]cns.IPConfigurationStatus)
 
 	defer func() {
-		// if there was an error, and not all ip's have been freed, restore state
+		// if there was an error, and not all IPs have been freed, restore state
 		if err != nil && len(pendingReleaseIPs) != numberOfIPsToMark {
 			for uuid, ipState := range pendingReleaseIPs {
 				ipState.SetState(types.Available)
 				ipm.AvailableIPIDStack.Push(pendingReleaseIPs[uuid].ID)
-				ipm.AvailableIPConfigState[pendingReleaseIPs[uuid].ID] = ipState
-				delete(ipm.PendingReleaseIPConfigState, pendingReleaseIPs[uuid].ID)
+				ipm.AvailableIPConfigStatus[pendingReleaseIPs[uuid].ID] = ipState
+				delete(ipm.PendingReleaseIPConfigStatus, pendingReleaseIPs[uuid].ID)
 			}
 		}
 	}()
@@ -138,46 +134,33 @@ func (ipm *IPStateManager) MarkIPAsPendingRelease(numberOfIPsToMark int) (map[st
 	for i := 0; i < numberOfIPsToMark; i++ {
 		id, err := ipm.AvailableIPIDStack.Pop()
 		if err != nil {
-			return ipm.PendingReleaseIPConfigState, err
+			return ipm.PendingReleaseIPConfigStatus, err
 		}
 
 		// add all pending release to a slice
-		ipConfig := ipm.AvailableIPConfigState[id]
+		ipConfig := ipm.AvailableIPConfigStatus[id]
 		ipConfig.SetState(types.PendingRelease)
 		pendingReleaseIPs[id] = ipConfig
 
-		delete(ipm.AvailableIPConfigState, id)
+		delete(ipm.AvailableIPConfigStatus, id)
 	}
 
-	// if no errors at this point, add the pending ips to the Pending state
+	// if no errors at this point, add the pending IPs to the Pending state
 	for _, pendingReleaseIP := range pendingReleaseIPs {
-		ipm.PendingReleaseIPConfigState[pendingReleaseIP.ID] = pendingReleaseIP
+		ipm.PendingReleaseIPConfigStatus[pendingReleaseIP.ID] = pendingReleaseIP
 	}
 
 	return pendingReleaseIPs, nil
 }
 
-var _ cns.HTTPService = (*HTTPServiceFake)(nil)
-
-type HTTPServiceFake struct {
-	IPStateManager IPStateManager
-	PoolMonitor    cns.IPAMPoolMonitor
-}
-
-func NewHTTPServiceFake() *HTTPServiceFake {
-	return &HTTPServiceFake{
-		IPStateManager: NewIPStateManager(),
-	}
-}
-
-func (fake *HTTPServiceFake) SetNumberOfAssignedIPs(assign int) error {
-	currentAssigned := len(fake.IPStateManager.AssignedIPConfigState)
+func (ipm *IPStatusManager) SetNumberOfAssignedIPs(assign int) error {
+	currentAssigned := len(ipm.AssignedIPConfigStatus)
 	delta := (assign - currentAssigned)
 
 	if delta > 0 {
 		// assign IPs
 		for i := 0; i < delta; i++ {
-			if _, err := fake.IPStateManager.ReserveIPConfig(); err != nil {
+			if _, err := ipm.ReserveIPConfig(); err != nil {
 				return err
 			}
 		}
@@ -186,11 +169,11 @@ func (fake *HTTPServiceFake) SetNumberOfAssignedIPs(assign int) error {
 	// unassign IPs
 	delta *= -1
 	i := 0
-	for id := range fake.IPStateManager.AssignedIPConfigState {
+	for id := range ipm.AssignedIPConfigStatus {
 		if i >= delta {
 			break
 		}
-		if _, err := fake.IPStateManager.ReleaseIPConfig(id); err != nil {
+		if _, err := ipm.ReleaseIPConfig(id); err != nil {
 			return err
 		}
 		i++
@@ -198,60 +181,28 @@ func (fake *HTTPServiceFake) SetNumberOfAssignedIPs(assign int) error {
 	return nil
 }
 
-func (fake *HTTPServiceFake) SendNCSnapShotPeriodically(context.Context, int) {}
-
-func (fake *HTTPServiceFake) SetNodeOrchestrator(*cns.SetOrchestratorTypeRequest) {}
-
-func (fake *HTTPServiceFake) SyncNodeStatus(string, string, string, json.RawMessage) (types.ResponseCode, string) {
-	return 0, ""
-}
-
-// SyncHostNCVersion will update HostVersion in containerstatus.
-func (fake *HTTPServiceFake) SyncHostNCVersion(context.Context, string, time.Duration) {}
-
-func (fake *HTTPServiceFake) GetPendingReleaseIPConfigs() []cns.IPConfigurationStatus {
+func (ipm *IPStatusManager) GetPendingReleaseIPConfigs() []cns.IPConfigurationStatus {
 	ipconfigs := []cns.IPConfigurationStatus{}
-	for key := range fake.IPStateManager.PendingReleaseIPConfigState {
-		ipconfigs = append(ipconfigs, fake.IPStateManager.PendingReleaseIPConfigState[key])
+	for key := range ipm.PendingReleaseIPConfigStatus {
+		ipconfigs = append(ipconfigs, ipm.PendingReleaseIPConfigStatus[key])
 	}
 	return ipconfigs
 }
 
 // Return union of all state maps
-func (fake *HTTPServiceFake) GetPodIPConfigState() map[string]cns.IPConfigurationStatus {
+func (ipm *IPStatusManager) GetPodIPConfigState() map[string]cns.IPConfigurationStatus {
 	ipconfigs := make(map[string]cns.IPConfigurationStatus)
-	for key := range fake.IPStateManager.AssignedIPConfigState {
-		ipconfigs[key] = fake.IPStateManager.AssignedIPConfigState[key]
+	for key := range ipm.AssignedIPConfigStatus {
+		ipconfigs[key] = ipm.AssignedIPConfigStatus[key]
 	}
-	for key := range fake.IPStateManager.AvailableIPConfigState {
-		ipconfigs[key] = fake.IPStateManager.AvailableIPConfigState[key]
+	for key := range ipm.AvailableIPConfigStatus {
+		ipconfigs[key] = ipm.AvailableIPConfigStatus[key]
 	}
-	for key := range fake.IPStateManager.PendingReleaseIPConfigState {
-		ipconfigs[key] = fake.IPStateManager.PendingReleaseIPConfigState[key]
+	for key := range ipm.PendingReleaseIPConfigStatus {
+		ipconfigs[key] = ipm.PendingReleaseIPConfigStatus[key]
 	}
-	for key := range fake.IPStateManager.PendingProgramIPConfigState {
-		ipconfigs[key] = fake.IPStateManager.PendingProgramIPConfigState[key]
+	for key := range ipm.PendingProgramIPConfigStatus {
+		ipconfigs[key] = ipm.PendingProgramIPConfigStatus[key]
 	}
 	return ipconfigs
 }
-
-// TODO: Populate on scale down
-func (fake *HTTPServiceFake) MarkIPAsPendingRelease(numberToMark int) (map[string]cns.IPConfigurationStatus, error) {
-	return fake.IPStateManager.MarkIPAsPendingRelease(numberToMark)
-}
-
-func (fake *HTTPServiceFake) GetOption(string) interface{} {
-	return nil
-}
-
-func (fake *HTTPServiceFake) SetOption(string, interface{}) {}
-
-func (fake *HTTPServiceFake) Start(*common.ServiceConfig) error {
-	return nil
-}
-
-func (fake *HTTPServiceFake) Init(*common.ServiceConfig) error {
-	return nil
-}
-
-func (fake *HTTPServiceFake) Stop() {}

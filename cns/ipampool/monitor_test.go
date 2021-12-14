@@ -41,33 +41,40 @@ type testState struct {
 	requestThresholdPercent int64
 }
 
-func initFakes(state testState) (*fakes.HTTPServiceFake, *fakes.RequestControllerFake, *Monitor) {
+func initFakes(state testState) (*fakes.IPStatusManager, *fakes.RequestControllerFake, *Monitor) {
 	logger.InitLogger("testlogs", 0, 0, "./")
 
-	scalarUnits := v1alpha.Scaler{
-		BatchSize:               state.batch,
-		RequestThresholdPercent: state.requestThresholdPercent,
-		ReleaseThresholdPercent: state.releaseThresholdPercent,
-		MaxIPCount:              state.max,
-	}
 	subnetaddresspace := "10.0.0.0/8"
 
-	fakecns := fakes.NewHTTPServiceFake()
-	fakerc := fakes.NewRequestControllerFake(fakecns, scalarUnits, subnetaddresspace, state.allocated)
-
-	poolmonitor := NewMonitor(fakecns, &fakeNodeNetworkConfigUpdater{fakerc.NNC}, &Options{RefreshDelay: 100 * time.Second})
+	nnc := &v1alpha.NodeNetworkConfig{
+		Spec: v1alpha.NodeNetworkConfigSpec{},
+		Status: v1alpha.NodeNetworkConfigStatus{
+			Scaler: v1alpha.Scaler{
+				BatchSize:               state.batch,
+				RequestThresholdPercent: state.requestThresholdPercent,
+				ReleaseThresholdPercent: state.releaseThresholdPercent,
+				MaxIPCount:              state.max,
+			},
+			NetworkContainers: []v1alpha.NetworkContainer{
+				{
+					SubnetAddressSpace: subnetaddresspace,
+				},
+			},
+		},
+	}
+	ipm := fakes.NewIPStatusManager()
+	poolmonitor := NewMonitor(ipm, &fakeNodeNetworkConfigUpdater{nnc}, &Options{RefreshDelay: 100 * time.Second})
+	fakerc := fakes.NewRequestControllerFake(ipm, &directUpdatePoolMonitor{m: poolmonitor}, nnc, subnetaddresspace, state.allocated)
 	poolmonitor.metastate = metaState{
 		batch:          state.batch,
 		max:            state.max,
-		maxFreePercent: maxFreePercent(scalarUnits),
-		minFreePercent: minFreePercent(scalarUnits),
+		maxFreePercent: maxFreePercent(nnc.Status.Scaler),
+		minFreePercent: minFreePercent(nnc.Status.Scaler),
 	}
-	fakecns.PoolMonitor = &directUpdatePoolMonitor{m: poolmonitor}
-	if err := fakecns.SetNumberOfAssignedIPs(state.assigned); err != nil {
+	if err := ipm.SetNumberOfAssignedIPs(state.assigned); err != nil {
 		logger.Printf("%s", err)
 	}
-
-	return fakecns, fakerc, poolmonitor
+	return ipm, fakerc, poolmonitor
 }
 
 func TestPoolSizeIncrease(t *testing.T) {

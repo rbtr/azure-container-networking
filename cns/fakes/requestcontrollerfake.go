@@ -13,33 +13,32 @@ import (
 	"github.com/google/uuid"
 )
 
-type RequestControllerFake struct {
-	cnscli *HTTPServiceFake
-	NNC    *v1alpha.NodeNetworkConfig
-	ip     net.IP
+type poolMonitor interface {
+	Update(nnc *v1alpha.NodeNetworkConfig)
 }
 
-func NewRequestControllerFake(cnsService *HTTPServiceFake, scalar v1alpha.Scaler, subnetAddressSpace string, numberOfIPConfigs int64) *RequestControllerFake {
+type ipStatusManager interface {
+	AddIPConfigs([]cns.IPConfigurationStatus)
+	RemovePendingReleaseIPConfigs([]string)
+	GetPodIPConfigState() map[string]cns.IPConfigurationStatus
+}
+
+type RequestControllerFake struct {
+	ipm     ipStatusManager
+	poolMon poolMonitor
+	nnc     *v1alpha.NodeNetworkConfig
+	ip      net.IP
+}
+
+func NewRequestControllerFake(ipm ipStatusManager, poolMon poolMonitor, nnc *v1alpha.NodeNetworkConfig, subnetAddressSpace string, numberOfIPConfigs int64) *RequestControllerFake {
 	rc := &RequestControllerFake{
-		cnscli: cnsService,
-		NNC: &v1alpha.NodeNetworkConfig{
-			Spec: v1alpha.NodeNetworkConfigSpec{},
-			Status: v1alpha.NodeNetworkConfigStatus{
-				Scaler: scalar,
-				NetworkContainers: []v1alpha.NetworkContainer{
-					{
-						SubnetAddressSpace: subnetAddressSpace,
-					},
-				},
-			},
-		},
+		ipm:     ipm,
+		poolMon: poolMon,
+		nnc:     nnc,
 	}
-
 	rc.ip, _, _ = net.ParseCIDR(subnetAddressSpace)
-
 	rc.CarveIPConfigsAndAddToStatusAndCNS(numberOfIPConfigs)
-	rc.NNC.Spec.RequestedIPCount = numberOfIPConfigs
-
+	rc.nnc.Spec.RequestedIPCount = numberOfIPConfigs
 	return rc
 }
 
@@ -51,7 +50,7 @@ func (rc *RequestControllerFake) CarveIPConfigsAndAddToStatusAndCNS(numberOfIPCo
 			Name: uuid.New().String(),
 			IP:   rc.ip.String(),
 		}
-		rc.NNC.Status.NetworkContainers[0].IPAssignments = append(rc.NNC.Status.NetworkContainers[0].IPAssignments, ipconfigCRD)
+		rc.nnc.Status.NetworkContainers[0].IPAssignments = append(rc.nnc.Status.NetworkContainers[0].IPAssignments, ipconfigCRD)
 
 		ipconfigCNS := cns.IPConfigurationStatus{
 			ID:        ipconfigCRD.Name,
@@ -63,7 +62,7 @@ func (rc *RequestControllerFake) CarveIPConfigsAndAddToStatusAndCNS(numberOfIPCo
 		incrementIP(rc.ip)
 	}
 
-	rc.cnscli.IPStateManager.AddIPConfigs(cnsIPConfigs)
+	rc.ipm.AddIPConfigs(cnsIPConfigs)
 
 	return cnsIPConfigs
 }
@@ -85,7 +84,7 @@ func remove(slice []v1alpha.IPAssignment, s int) []v1alpha.IPAssignment {
 }
 
 func (rc *RequestControllerFake) Reconcile(removePendingReleaseIPs bool) error {
-	diff := rc.NNC.Spec.RequestedIPCount - int64(len(rc.cnscli.GetPodIPConfigState()))
+	diff := rc.nnc.Spec.RequestedIPCount - int64(len(rc.ipm.GetPodIPConfigState()))
 
 	if diff > 0 {
 		// carve the difference of test IPs and add them to CNS, assume dnc has populated the CRD status
@@ -94,28 +93,28 @@ func (rc *RequestControllerFake) Reconcile(removePendingReleaseIPs bool) error {
 		// Assume DNC has removed the IPConfigs from the status
 
 		// mimic DNC removing IPConfigs from the CRD
-		for _, notInUseIPConfigName := range rc.NNC.Spec.IPsNotInUse {
+		for _, notInUseIPConfigName := range rc.nnc.Spec.IPsNotInUse {
 
 			// remove ipconfig from status
 			index := 0
-			for _, ipconfig := range rc.NNC.Status.NetworkContainers[0].IPAssignments {
+			for _, ipconfig := range rc.nnc.Status.NetworkContainers[0].IPAssignments {
 				if notInUseIPConfigName == ipconfig.Name {
 					break
 				}
 				index++
 			}
-			rc.NNC.Status.NetworkContainers[0].IPAssignments = remove(rc.NNC.Status.NetworkContainers[0].IPAssignments, index)
+			rc.nnc.Status.NetworkContainers[0].IPAssignments = remove(rc.nnc.Status.NetworkContainers[0].IPAssignments, index)
 
 		}
 	}
 
 	// remove ipconfig from CNS
 	if removePendingReleaseIPs {
-		rc.cnscli.IPStateManager.RemovePendingReleaseIPConfigs(rc.NNC.Spec.IPsNotInUse)
+		rc.ipm.RemovePendingReleaseIPConfigs(rc.nnc.Spec.IPsNotInUse)
 	}
 
 	// update
-	rc.cnscli.PoolMonitor.Update(rc.NNC)
+	rc.poolMon.Update(rc.nnc)
 	return nil
 }
 

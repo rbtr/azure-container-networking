@@ -23,6 +23,12 @@ type nodeNetworkConfigSpecUpdater interface {
 	UpdateSpec(context.Context, *v1alpha.NodeNetworkConfigSpec) (*v1alpha.NodeNetworkConfig, error)
 }
 
+type ipStatusManager interface {
+	GetPendingReleaseIPConfigs() []cns.IPConfigurationStatus
+	GetPodIPConfigState() map[string]cns.IPConfigurationStatus
+	MarkIPAsPendingRelease(numberToMark int) (map[string]cns.IPConfigurationStatus, error)
+}
+
 // metaState is the Monitor's configuration state for the IP pool.
 type metaState struct {
 	batch          int64
@@ -44,13 +50,13 @@ type Monitor struct {
 	spec        v1alpha.NodeNetworkConfigSpec
 	metastate   metaState
 	nnccli      nodeNetworkConfigSpecUpdater
-	httpService cns.HTTPService
+	ipm         ipStatusManager
 	initialized chan interface{}
 	nncSource   chan v1alpha.NodeNetworkConfig
 	once        sync.Once
 }
 
-func NewMonitor(httpService cns.HTTPService, nnccli nodeNetworkConfigSpecUpdater, opts *Options) *Monitor {
+func NewMonitor(ipm ipStatusManager, nnccli nodeNetworkConfigSpecUpdater, opts *Options) *Monitor {
 	if opts.RefreshDelay < 1 {
 		opts.RefreshDelay = DefaultRefreshDelay
 	}
@@ -59,7 +65,7 @@ func NewMonitor(httpService cns.HTTPService, nnccli nodeNetworkConfigSpecUpdater
 	}
 	return &Monitor{
 		opts:        opts,
-		httpService: httpService,
+		ipm:         ipm,
 		nnccli:      nnccli,
 		initialized: make(chan interface{}),
 		nncSource:   make(chan v1alpha.NodeNetworkConfig),
@@ -103,7 +109,7 @@ func (pm *Monitor) Start(ctx context.Context) error {
 }
 
 func (pm *Monitor) reconcile(ctx context.Context) error {
-	allocatedIPs := pm.httpService.GetPodIPConfigState()
+	allocatedIPs := pm.ipm.GetPodIPConfigState()
 	pool := newIPPool(allocatedIPs, pm.spec)
 	logger.Printf("ipam-pool-monitor state %+v", pool)
 	observeIPPoolState(pool, pm.metastate)
@@ -178,7 +184,7 @@ func (pm *Monitor) decreasePoolSize(ctx context.Context, pool ipPool) error {
 	if pm.metastate.notInUseCount == 0 || pm.metastate.notInUseCount < pool.pendingRelease {
 		logger.Printf("[ipam-pool-monitor] Marking IPs as PendingRelease, ipsToBeReleasedCount %d", deallocate)
 		var err error
-		if pendingIPAddresses, err = pm.httpService.MarkIPAsPendingRelease(int(deallocate)); err != nil {
+		if pendingIPAddresses, err = pm.ipm.MarkIPAsPendingRelease(int(deallocate)); err != nil {
 			return errors.Wrapf(err, "failed to deallocate %d IPs", deallocate)
 		}
 
@@ -240,7 +246,7 @@ func (pm *Monitor) createNNCSpecForCRD() v1alpha.NodeNetworkConfigSpec {
 	spec.RequestedIPCount = pm.spec.RequestedIPCount
 
 	// Get All Pending IPs from CNS and populate it again.
-	pendingIPs := pm.httpService.GetPendingReleaseIPConfigs()
+	pendingIPs := pm.ipm.GetPendingReleaseIPConfigs()
 	for _, pendingIP := range pendingIPs {
 		spec.IPsNotInUse = append(spec.IPsNotInUse, pendingIP.ID)
 	}
@@ -267,7 +273,7 @@ func (pm *Monitor) Update(nnc *v1alpha.NodeNetworkConfig) {
 	pm.clampScaler(&nnc.Status.Scaler)
 
 	// if the nnc has converged, observe the pool scaling latency (if any).
-	allocatedIPs := len(pm.httpService.GetPodIPConfigState()) - len(pm.httpService.GetPendingReleaseIPConfigs())
+	allocatedIPs := len(pm.ipm.GetPodIPConfigState()) - len(pm.ipm.GetPendingReleaseIPConfigs())
 	if int(nnc.Spec.RequestedIPCount) == allocatedIPs {
 		// observe elapsed duration for IP pool scaling
 		metric.ObserverPoolScaleLatency()
