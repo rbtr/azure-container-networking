@@ -35,11 +35,12 @@ var (
 )
 
 type interfaceGetter interface {
-	GetInterfaces(ctx context.Context) (*wireserver.GetInterfacesResult, error)
+	GetInterfaces(context.Context) (*wireserver.GetInterfacesResult, error)
 }
 
 type nmagentClient interface {
-	GetNCVersionList(ctx context.Context) (*nmagent.NetworkContainerListResponse, error)
+	GetNCVersionList(context.Context) (*nmagent.NetworkContainerListResponse, error)
+	JoinNetwork(string, string) error
 }
 
 // HTTPRestService represents http listener for CNS - Container Networking Service.

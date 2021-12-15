@@ -7,7 +7,9 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/Azure/azure-container-networking/cns/logger"
@@ -20,6 +22,14 @@ const (
 	GetNmAgentSupportedApiURLFmt       = "http://%s/machine/plugins/?comp=nmagent&type=GetSupportedApis"
 	GetNetworkContainerVersionURLFmt   = "http://%s/machine/plugins/?comp=nmagent&type=NetworkManagement/interfaces/%s/networkContainers/%s/version/authenticationToken/%s/api-version/1"
 	GetNcVersionListWithOutTokenURLFmt = "http://%s/machine/plugins/?comp=nmagent&type=NetworkManagement/interfaces/api-version/%s"
+)
+
+const (
+	contentTypeJSON   = "application/json"
+	defaultBaseURL    = "http://168.63.129.16"
+	dialerTimeout     = 5 * time.Second
+	headerContentType = "Content-Type"
+	headerTimeout     = 120 * time.Second
 )
 
 // WireServerIP - wire server ip
@@ -51,36 +61,65 @@ type NetworkContainerListResponse struct {
 
 // Client is client to handle queries to nmagent
 type Client struct {
-	connectionURL string
+	baseURL *url.URL
+	client  *http.Client
 }
 
 // NewClient create a new nmagent client.
-func NewClient(url string) (*Client, error) {
-	if url == "" {
-		url = fmt.Sprintf(GetNcVersionListWithOutTokenURLFmt, WireserverIP, getNcVersionListWithOutTokenURLVersion)
+func NewClient(baseURL string, client *http.Client) (*Client, error) {
+	if baseURL == "" {
+		baseURL = defaultBaseURL
 	}
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	if client == nil {
+		dialer := &net.Dialer{
+			Timeout: dialerTimeout,
+		}
+		client = &http.Client{
+			Transport: &http.Transport{
+				DialContext:           dialer.DialContext,
+				ResponseHeaderTimeout: headerTimeout,
+			},
+		}
+	}
+	// if url == "" {
+	// 	url = fmt.Sprintf(GetNcVersionListWithOutTokenURLFmt, WireserverIP, getNcVersionListWithOutTokenURLVersion)
+	// }
 	return &Client{
-		connectionURL: url,
+		baseURL: u,
+		client:  client,
 	}, nil
 }
 
+var ErrFailedToJoinNetwork = errors.New("failed to join network")
+
 // JoinNetwork joins the given network
-func JoinNetwork(networkID, joinNetworkURL string) (*http.Response, error) {
+func (c *Client) JoinNetwork(networkID, joinNetworkURL string) error {
 	logger.Printf("[NMAgentClient] JoinNetwork: %s", networkID)
 
 	// Empty body is required as wireserver cannot handle a post without the body.
 	var body bytes.Buffer
-	json.NewEncoder(&body).Encode("")
-	response, err := common.GetHttpClient().Post(joinNetworkURL, "application/json", &body)
-
-	if err == nil && response.StatusCode == http.StatusOK {
-		defer response.Body.Close()
+	if err := json.NewEncoder(&body).Encode(""); err != nil {
+		return err
 	}
 
-	logger.Printf("[NMAgentClient][Response] Join network: %s. Response: %+v. Error: %v",
-		networkID, response, err)
-
-	return response, err
+	req, err := http.NewRequestWithContext(context.TODO(), http.MethodPost, joinNetworkURL, &body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set(headerContentType, contentTypeJSON)
+	res, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode == http.StatusOK {
+		return nil
+	}
+	return errors.Wrapf(ErrFailedToJoinNetwork, res.Status)
 }
 
 // PublishNetworkContainer publishes given network container
@@ -123,13 +162,17 @@ func GetNetworkContainerVersion(networkContainerID, getNetworkContainerVersionUR
 }
 
 // GetNmAgentSupportedApis :- Retrieves Supported Apis from NMAgent
-func GetNmAgentSupportedApis(httpc *http.Client, getNmAgentSupportedApisURL string) ([]string, error) {
+func GetNmAgentSupportedApis(httpc *http.Client, supportedAPIsURL *url.URL) ([]string, error) {
 	var returnErr error
 
-	if getNmAgentSupportedApisURL == "" {
-		getNmAgentSupportedApisURL = fmt.Sprintf(
-			GetNmAgentSupportedApiURLFmt, WireserverIP)
-	}
+	// if supportedAPIsURL == nil {
+	// 	supportedAPIsURL =
+	// }
+
+	// if getNmAgentSupportedApisURL == "" {
+	// 	getNmAgentSupportedApisURL = fmt.Sprintf(
+	// 		GetNmAgentSupportedApiURLFmt, WireserverIP)
+	// }
 
 	req, err := http.NewRequestWithContext(context.TODO(), http.MethodGet, getNmAgentSupportedApisURL, nil)
 	if err != nil {

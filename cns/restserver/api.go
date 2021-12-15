@@ -1124,10 +1124,10 @@ func (service *HTTPRestService) publishNetworkContainer(w http.ResponseWriter, r
 	}
 
 	switch r.Method {
-	case "POST":
+	case http.MethodPost:
 		// Join the network
-		publishResponse, publishError, err = service.joinNetwork(req.NetworkID, req.JoinNetworkURL)
-		if err == nil {
+		publishError = service.joinNetwork(req.NetworkID, req.JoinNetworkURL)
+		if publishError == nil {
 			isNetworkJoined = true
 		} else {
 			returnMessage = err.Error()
@@ -1234,11 +1234,11 @@ func (service *HTTPRestService) unpublishNetworkContainer(w http.ResponseWriter,
 	}
 
 	switch r.Method {
-	case "POST":
+	case http.MethodPost:
 		// Join Network if not joined already
 		isNetworkJoined = service.isNetworkJoined(req.NetworkID)
 		if !isNetworkJoined {
-			unpublishResponse, unpublishError, err = service.joinNetwork(req.NetworkID, req.JoinNetworkURL)
+			unpublishError = service.joinNetwork(req.NetworkID, req.JoinNetworkURL)
 			if err == nil {
 				isNetworkJoined = true
 			} else {

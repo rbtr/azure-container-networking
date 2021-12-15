@@ -622,23 +622,14 @@ func (service *HTTPRestService) setNetworkStateJoined(networkID string) {
 }
 
 // Join Network by calling nmagent
-func (service *HTTPRestService) joinNetwork(
-	networkID string,
-	joinNetworkURL string) (*http.Response, error, error) {
-	var err error
-	joinResponse, joinErr := nmagent.JoinNetwork(
-		networkID,
-		joinNetworkURL)
-
-	if joinErr == nil && joinResponse.StatusCode == http.StatusOK {
-		// Network joined successfully
-		service.setNetworkStateJoined(networkID)
-		logger.Printf("[Azure-CNS] setNetworkStateJoined for network: %s", networkID)
-	} else {
-		err = fmt.Errorf("Failed to join network: %s", networkID)
+func (service *HTTPRestService) joinNetwork(networkID, joinNetworkURL string) error {
+	err := service.nmagentClient.JoinNetwork(networkID, joinNetworkURL)
+	if err != nil {
+		return errors.Wrap(err, networkID)
 	}
-
-	return joinResponse, joinErr, err
+	service.setNetworkStateJoined(networkID)
+	logger.Printf("[Azure-CNS] setNetworkStateJoined for network: %s", networkID)
+	return nil
 }
 
 func logNCSnapshot(createNetworkContainerRequest cns.CreateNetworkContainerRequest) {
