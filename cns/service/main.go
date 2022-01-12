@@ -46,7 +46,9 @@ import (
 	"github.com/Azure/azure-container-networking/store"
 	"github.com/avast/retry-go/v3"
 	"github.com/pkg/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -568,12 +570,7 @@ func main() {
 				cns.GlobalPodInfoScheme = cns.InterfaceIDPodInfoScheme
 			}
 		}
-		if cnsconfig.InitializeFromCNI {
-			logger.Printf("Initializing from CNI")
-		} else {
-			logger.Printf("Initializing from Kubernetes")
-		}
-		logger.Printf("Set GlobalPodInfoScheme %v", cns.GlobalPodInfoScheme)
+		logger.Printf("Set GlobalPodInfoScheme %v (InitializeFromCNI=%t)", cns.GlobalPodInfoScheme, cnsconfig.InitializeFromCNI)
 
 		err = InitializeCRDState(rootCtx, httpRestService, cnsconfig)
 		if err != nil {
@@ -822,7 +819,7 @@ type ncStateReconciler interface {
 
 // TODO(rbtr) where should this live??
 // InitCNS initializes cns by passing pods and a createnetworkcontainerrequest
-func initCNS(ctx context.Context, cli nodeNetworkConfigGetter, ncReconciler ncStateReconciler) error {
+func initCNS(ctx context.Context, cli nodeNetworkConfigGetter, ncReconciler ncStateReconciler, podInfoByIPProvider cns.PodInfoByIPProvider) error {
 	// Get nnc using direct client
 	nnc, err := cli.Get(ctx)
 	if err != nil {
@@ -852,13 +849,7 @@ func initCNS(ctx context.Context, cli nodeNetworkConfigGetter, ncReconciler ncSt
 	if err != nil {
 		return errors.Wrap(err, "failed to convert NNC status to network container request")
 	}
-
-	// rebuild CNS state from CNI
-	logger.Printf("initializing CNS from CNI")
-	podInfoByIPProvider, err := cnireconciler.NewCNIPodInfoProvider()
-	if err != nil {
-		return errors.Wrap(err, "failed to create CNI PodInfoProvider")
-	}
+	// rebuild CNS state
 	podInfoByIP, err := podInfoByIPProvider.PodInfoByIP()
 	if err != nil {
 		return errors.Wrap(err, "err in CNS initialization")
@@ -918,11 +909,36 @@ func InitializeCRDState(ctx context.Context, httpRestService cns.HTTPService, cn
 		}
 	}()
 
+	clientset, err := kubernetes.NewForConfig(kubeConfig)
+	if err != nil {
+		return errors.Wrap(err, "failed to build clientset")
+	}
+
+	var podInfoByIPProvider cns.PodInfoByIPProvider
+	if cnsconfig.InitializeFromCNI {
+		logger.Printf("Initializing from CNI")
+		podInfoByIPProvider, err = cnireconciler.NewCNIPodInfoProvider()
+		if err != nil {
+			return errors.Wrap(err, "failed to create CNI PodInfoProvider")
+		}
+	} else {
+		logger.Printf("Initializing from Kubernetes")
+		pods, err := clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{
+			FieldSelector: "spec.nodeName=" + nodeName,
+		})
+		if err != nil {
+			return errors.Wrap(err, "failed to list Pods for PodInfoProvider")
+		}
+		podInfoByIPProvider = cns.PodInfoByIPProviderFunc(func() (map[string]cns.PodInfo, error) {
+			return cns.KubePodsToPodInfoByIP(pods.Items)
+		})
+	}
+
 	// apiserver nnc might not be registered or api server might be down and crashloop backof puts us outside of 5-10 minutes we have for
 	// aks addons to come up so retry a bit more aggresively here.
 	// will retry 10 times maxing out at a minute taking about 8 minutes before it gives up.
 	err = retry.Do(func() error {
-		err = initCNS(ctx, scopedcli, httpRestServiceImplementation)
+		err = initCNS(ctx, scopedcli, httpRestServiceImplementation, podInfoByIPProvider)
 		if err != nil {
 			logger.Errorf("[Azure CNS] Failed to init cns with err: %v", err)
 		}
