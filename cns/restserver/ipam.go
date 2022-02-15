@@ -223,7 +223,7 @@ func (service *HTTPRestService) handleDebugRestData(w http.ResponseWriter, r *ht
 		HTTPRestServiceData: HTTPRestServiceData{
 			PodIPIDByPodInterfaceKey: service.PodIPIDByPodInterfaceKey,
 			PodIPConfigState:         service.PodIPConfigState,
-			IPAMPoolMonitor:          service.IPAMPoolMonitor.GetStateSnapshot(),
+			// IPAMPoolMonitor:          service.IPAMPoolMonitor.GetStateSnapshot(),
 		},
 	}
 	err := service.Listener.Encode(w, &resp)

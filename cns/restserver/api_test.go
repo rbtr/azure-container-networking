@@ -990,7 +990,6 @@ func startService() error {
 		return err
 	}
 
-	svc.IPAMPoolMonitor = &fakes.MonitorFake{}
 	nmagentClient.GetNCVersionListFunc = func(context.Context) (*nmagent.NetworkContainerListResponse, error) {
 		var hostVersionNeedsUpdateContainers []string
 		for idx := range svc.state.ContainerStatus {

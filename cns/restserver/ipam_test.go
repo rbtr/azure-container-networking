@@ -11,7 +11,6 @@ import (
 	"github.com/Azure/azure-container-networking/cns/common"
 	"github.com/Azure/azure-container-networking/cns/fakes"
 	"github.com/Azure/azure-container-networking/cns/types"
-	"github.com/Azure/azure-container-networking/crd/nodenetworkconfig/api/v1alpha"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
@@ -39,7 +38,6 @@ func getTestService() *HTTPRestService {
 	var config common.ServiceConfig
 	httpsvc, _ := NewHTTPRestService(&config, &fakes.WireserverClientFake{}, &fakes.NMAgentClientFake{})
 	svc = httpsvc.(*HTTPRestService)
-	svc.IPAMPoolMonitor = &fakes.MonitorFake{}
 	setOrchestratorTypeInternal(cns.KubernetesCRD)
 
 	return svc
@@ -597,20 +595,20 @@ func TestIPAMMarkIPAsPendingWithPendingProgrammingIPs(t *testing.T) {
 	if returnCode != 0 {
 		t.Fatalf("Failed to createNetworkContainerRequest, req: %+v, err: %d", req, returnCode)
 	}
-	svc.IPAMPoolMonitor.Update(
-		&v1alpha.NodeNetworkConfig{
-			Status: v1alpha.NodeNetworkConfigStatus{
-				Scaler: v1alpha.Scaler{
-					BatchSize:               batchSize,
-					ReleaseThresholdPercent: releasePercent,
-					RequestThresholdPercent: requestPercent,
-				},
-			},
-			Spec: v1alpha.NodeNetworkConfigSpec{
-				RequestedIPCount: initPoolSize,
-			},
-		},
-	)
+	// svc.IPAMPoolMonitor.Update(
+	// 	&v1alpha.NodeNetworkConfig{
+	// 		Status: v1alpha.NodeNetworkConfigStatus{
+	// 			Scaler: v1alpha.Scaler{
+	// 				BatchSize:               batchSize,
+	// 				ReleaseThresholdPercent: releasePercent,
+	// 				RequestThresholdPercent: requestPercent,
+	// 			},
+	// 		},
+	// 		Spec: v1alpha.NodeNetworkConfigSpec{
+	// 			RequestedIPCount: initPoolSize,
+	// 		},
+	// 	},
+	// )
 	// Release pending programming IPs
 	ips, err := svc.MarkIPAsPendingRelease(2)
 	if err != nil {

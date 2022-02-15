@@ -933,7 +933,6 @@ func InitializeCRDState(ctx context.Context, httpRestService cns.HTTPService, cn
 		RefreshDelay: poolIPAMRefreshRateInMilliseconds * time.Millisecond,
 	}
 	poolMonitor := ipampool.NewMonitor(httpRestServiceImplementation, scopedcli, &poolOpts)
-	httpRestServiceImplementation.IPAMPoolMonitor = poolMonitor
 
 	// reconcile initial CNS state from CNI or apiserver.
 	// apiserver nnc might not be registered or api server might be down and crashloop backof puts us outside of 5-10 minutes we have for
