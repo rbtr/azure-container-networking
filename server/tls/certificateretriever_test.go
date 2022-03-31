@@ -1,5 +1,3 @@
-// Copyright 2020 Microsoft. All rights reserved.
-
 package tls
 
 import (
@@ -12,6 +10,8 @@ import (
 	"math/big"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -19,20 +19,21 @@ const (
 	commonName = "test.azure.com"
 )
 
-func TestPemConsumptionLinux(t *testing.T) {
+func TestPemConsumption(t *testing.T) {
 	pemContent := createPemCertificate(t)
 	currentDirectory, _ := os.Getwd()
 	pemLocation := fmt.Sprintf("%s/%s.Pem", currentDirectory, commonName)
 
-	os.WriteFile(pemLocation, pemContent, 0o644)
-	defer os.Remove(pemLocation)
+	cleanup, err := setup(pemLocation, pemContent)
+	require.NoError(t, err)
+	defer cleanup()
 
-	config := TlsSettings{
-		TLSCertificatePath: pemLocation,
-		TLSSubjectName:     commonName,
+	config := Settings{
+		CertificatePath: pemLocation,
+		SubjectName:     commonName,
 	}
 
-	fileCertRetriever, err := NewTlsCertificateRetriever(config)
+	fileCertRetriever, err := NewCertificateRetriever(config)
 	if err != nil {
 		t.Fatalf("Failed to open file certificate retriever %+v", err)
 	}
@@ -41,7 +42,7 @@ func TestPemConsumptionLinux(t *testing.T) {
 		t.Fatalf("Failed to get certificate %+v", err)
 	}
 	if certificate.Subject.CommonName != commonName {
-		t.Fatalf("Recieved a unexpected subject name %+v", err)
+		t.Fatalf("Received a unexpected subject name %+v", err)
 	}
 	_, err = fileCertRetriever.GetPrivateKey()
 	if err != nil {

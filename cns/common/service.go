@@ -39,7 +39,7 @@ type ServiceConfig struct {
 	ErrChan     chan<- error
 	Store       store.KeyValueStore
 	ChannelMode string
-	TlsSettings tls.TlsSettings
+	TLSSettings tls.Settings
 }
 
 // NewService creates a new Service object.

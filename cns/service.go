@@ -73,14 +73,14 @@ func (service *Service) Initialize(config *common.ServiceConfig) error {
 		if err != nil {
 			return err
 		}
-		if config.TlsSettings.TLSPort != "" {
+		if config.TLSSettings.Port != "" {
 			// listener.URL.Host will always be hostname:port, passed in to CNS via CNS command
 			// else it will default to localhost
 			// extract hostname and override tls port.
 			hostParts := strings.Split(listener.URL.Host, ":")
-			config.TlsSettings.TLSEndpoint = hostParts[0] + ":" + config.TlsSettings.TLSPort
+			config.TLSSettings.Endpoint = hostParts[0] + ":" + config.TLSSettings.Port
 			// Start the listener and HTTP and HTTPS server.
-			if err = listener.StartTLS(config.ErrChan, config.TlsSettings); err != nil {
+			if err := listener.StartTLS(config.ErrChan, config.TLSSettings); err != nil {
 				return err
 			}
 		}

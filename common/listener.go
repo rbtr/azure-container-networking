@@ -41,8 +41,8 @@ func NewListener(u *url.URL) (*Listener, error) {
 	return &listener, nil
 }
 
-func GetTlsConfig(tlsSettings localtls.TlsSettings) (*tls.Config, error) {
-	tlsCertRetriever, err := localtls.GetTlsCertificateRetriever(tlsSettings)
+func GetTLSConfig(tlsSettings localtls.Settings) (*tls.Config, error) {
+	tlsCertRetriever, err := localtls.GetCertificateRetriever(tlsSettings)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to get certificate retriever %+v", err)
 	}
@@ -73,8 +73,8 @@ func GetTlsConfig(tlsSettings localtls.TlsSettings) (*tls.Config, error) {
 }
 
 // Start creates the listener socket and starts the HTTPS server.
-func (listener *Listener) StartTLS(errChan chan<- error, tlsSettings localtls.TlsSettings) error {
-	tlsConfig, err := GetTlsConfig(tlsSettings)
+func (listener *Listener) StartTLS(errChan chan<- error, tlsSettings localtls.Settings) error {
+	tlsConfig, err := GetTLSConfig(tlsSettings)
 	if err != nil {
 		log.Printf("[Listener] Failed to compose Tls Configuration with errror: %+v", err)
 		return err
@@ -85,12 +85,12 @@ func (listener *Listener) StartTLS(errChan chan<- error, tlsSettings localtls.Tl
 	}
 
 	// listen on a seperate endpoint for secure tls connections
-	listener.securelistener, err = net.Listen(listener.protocol, tlsSettings.TLSEndpoint)
+	listener.securelistener, err = net.Listen(listener.protocol, tlsSettings.Endpoint)
 	if err != nil {
 		log.Printf("[Listener] Failed to listen on TlsEndpoint: %+v", err)
 		return err
 	}
-	log.Printf("[Listener] Started listening on tls endpoint %s.", tlsSettings.TLSEndpoint)
+	log.Printf("[Listener] Started listening on tls endpoint %s.", tlsSettings.Endpoint)
 
 	// Launch goroutine for servicing https requests
 	go func() {

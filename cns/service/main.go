@@ -334,8 +334,8 @@ func sendRegisterNodeRequest(
 	httpc *http.Client,
 	httpRestService cns.HTTPService,
 	nodeRegisterRequest cns.NodeRegisterRequest,
-	registerURL string) error {
-
+	registerURL string,
+) error {
 	var body bytes.Buffer
 	err := json.NewEncoder(&body).Encode(nodeRegisterRequest)
 	if err != nil {
@@ -529,10 +529,10 @@ func main() {
 	logger.Printf("[Azure CNS] Initialize HTTPRestService")
 	if httpRestService != nil {
 		if cnsconfig.UseHTTPS {
-			config.TlsSettings = localtls.TlsSettings{
-				TLSSubjectName:     cnsconfig.TLSSubjectName,
-				TLSCertificatePath: cnsconfig.TLSCertificatePath,
-				TLSPort:            cnsconfig.TLSPort,
+			config.TLSSettings = localtls.Settings{
+				SubjectName:     cnsconfig.TLSSubjectName,
+				CertificatePath: cnsconfig.TLSCertificatePath,
+				Port:            cnsconfig.TLSPort,
 			}
 		}
 
