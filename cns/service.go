@@ -4,7 +4,6 @@
 package cns
 
 import (
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -31,8 +30,8 @@ type Service struct {
 }
 
 // NewService creates a new Service object.
-func NewService(name, version, channelMode string, store store.KeyValueStore) (*Service, error) {
-	service, err := common.NewService(name, version, channelMode, store)
+func NewService(name, version string, kvstore store.KeyValueStore) (*Service, error) {
+	service, err := common.NewService(name, version, kvstore)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +52,7 @@ func (service *Service) getAPIServerURL() string {
 }
 
 // Initialize initializes the service and starts the listener.
-func (service *Service) Initialize(config *common.ServiceConfig) error {
+func (service *Service) Initialize(errCh chan<- error, config common.ServiceConfig) error { //nolint:gocritic // ignore hugeParam
 	log.Debugf("[Azure CNS] Going to initialize a service with config: %+v", config)
 
 	// Initialize the base service.
@@ -73,14 +72,14 @@ func (service *Service) Initialize(config *common.ServiceConfig) error {
 		if err != nil {
 			return err
 		}
-		if config.TlsSettings.TLSPort != "" {
+		if config.TLSSettings.TLSPort != "" {
 			// listener.URL.Host will always be hostname:port, passed in to CNS via CNS command
 			// else it will default to localhost
 			// extract hostname and override tls port.
 			hostParts := strings.Split(listener.URL.Host, ":")
-			config.TlsSettings.TLSEndpoint = hostParts[0] + ":" + config.TlsSettings.TLSPort
+			config.TLSSettings.TLSEndpoint = hostParts[0] + ":" + config.TLSSettings.TLSPort
 			// Start the listener and HTTP and HTTPS server.
-			if err = listener.StartTLS(config.ErrChan, config.TlsSettings); err != nil {
+			if err := listener.StartTLS(errCh, config.TLSSettings); err != nil {
 				return err
 			}
 		}
@@ -95,20 +94,20 @@ func (service *Service) Initialize(config *common.ServiceConfig) error {
 	return nil
 }
 
-func (service *Service) StartListener(config *common.ServiceConfig) error {
-	log.Debugf("[Azure CNS] Going to start listener: %+v", config)
+func (service *Service) StartListener(errCh chan<- error) error {
+	log.Debugf("[Azure CNS] Going to start listener")
 
 	// Initialize the listener.
 	if service.Listener != nil {
-		log.Debugf("[Azure CNS] Starting listener: %+v", config)
+		log.Debugf("[Azure CNS] Starting listener")
 		// Start the listener.
 		// continue to listen on the normal endpoint for http traffic, this will be supported
 		// for sometime until partners migrate fully to https
-		if err := service.Listener.Start(config.ErrChan); err != nil {
+		if err := service.Listener.Start(errCh); err != nil {
 			return err
 		}
 	} else {
-		return fmt.Errorf("Failed to start a listener, it is not initialized, config %+v", config)
+		return errors.New("failed to start a listener, it is not initialized")
 	}
 
 	return nil

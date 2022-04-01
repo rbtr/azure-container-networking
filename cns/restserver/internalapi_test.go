@@ -117,14 +117,6 @@ func TestCreateAndUpdateNCWithSecondaryIPNCVersion(t *testing.T) {
 }
 
 func TestSyncHostNCVersion(t *testing.T) {
-	// cns.KubernetesCRD has one more logic compared to other orchestrator type, so test both of them
-	orchestratorTypes := []string{cns.Kubernetes, cns.KubernetesCRD}
-	for _, orchestratorType := range orchestratorTypes {
-		testSyncHostNCVersion(t, orchestratorType)
-	}
-}
-
-func testSyncHostNCVersion(t *testing.T, orchestratorType string) {
 	req := createNCReqeustForSyncHostNCVersion(t)
 	containerStatus := svc.state.ContainerStatus[req.NetworkContainerid]
 	if containerStatus.HostVersion != "-1" {
@@ -134,7 +126,7 @@ func testSyncHostNCVersion(t *testing.T, orchestratorType string) {
 		t.Errorf("Unexpected nc version in containerStatus as %s, expeted VM version should be 0 in string", containerStatus.CreateNetworkContainerRequest.Version)
 	}
 	// When sync host NC version, it will use the orchestratorType pass in.
-	svc.SyncHostNCVersion(context.Background(), orchestratorType)
+	svc.SyncHostNCVersion(context.Background(), false)
 	containerStatus = svc.state.ContainerStatus[req.NetworkContainerid]
 	if containerStatus.HostVersion != "0" {
 		t.Errorf("Unexpected containerStatus.HostVersion %s, expeted host version should be 0 in string", containerStatus.HostVersion)
@@ -158,7 +150,7 @@ func TestPendingIPsGotUpdatedWhenSyncHostNCVersion(t *testing.T) {
 			t.Errorf("Unexpected State %s, expected State is %s, IP address is %s", podIPConfigState.GetState(), types.PendingProgramming, podIPConfigState.IPAddress)
 		}
 	}
-	svc.SyncHostNCVersion(context.Background(), cns.CRD)
+	svc.SyncHostNCVersion(context.Background(), true)
 	containerStatus = svc.state.ContainerStatus[req.NetworkContainerid]
 
 	receivedSecondaryIPConfigs = containerStatus.CreateNetworkContainerRequest.SecondaryIPConfigs

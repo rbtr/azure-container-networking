@@ -330,12 +330,7 @@ func registerNode(httpc *http.Client, httpRestService cns.HTTPService, dncEP, in
 }
 
 // sendRegisterNodeRequest func helps in registering the node until there is an error.
-func sendRegisterNodeRequest(
-	httpc *http.Client,
-	httpRestService cns.HTTPService,
-	nodeRegisterRequest cns.NodeRegisterRequest,
-	registerURL string) error {
-
+func sendRegisterNodeRequest(httpc *http.Client, httpRestService cns.HTTPService, nodeRegisterRequest cns.NodeRegisterRequest, registerURL string) error {
 	var body bytes.Buffer
 	err := json.NewEncoder(&body).Encode(nodeRegisterRequest)
 	if err != nil {
@@ -403,17 +398,6 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Initialize CNS.
-	var (
-		err    error
-		config common.ServiceConfig
-	)
-
-	config.Version = version
-	config.Name = name
-	// Create a channel to receive unhandled errors from CNS.
-	config.ErrChan = rootErrCh
-
 	// Create logging provider.
 	logger.InitLogger(name, logLevel, logTarget, logDirectory)
 
@@ -431,34 +415,34 @@ func main() {
 	}
 
 	logger.Printf("[Azure CNS] cmdLineConfigPath: %s", cmdLineConfigPath)
-	cnsconfig, err := configuration.ReadConfig(cmdLineConfigPath)
+	config, err := configuration.ReadConfig(cmdLineConfigPath)
 	if err != nil {
 		logger.Errorf("[Azure CNS] Error reading cns config: %v", err)
 	}
 
-	configuration.SetCNSConfigDefaults(cnsconfig)
-	logger.Printf("[Azure CNS] Read config :%+v", cnsconfig)
+	configuration.SetCNSConfigDefaults(config)
+	logger.Printf("[Azure CNS] Read config :%+v", config)
 
-	if cnsconfig.WireserverIP != "" {
-		nmagent.WireserverIP = cnsconfig.WireserverIP
+	if config.WireserverIP != "" {
+		nmagent.WireserverIP = config.WireserverIP
 	}
 
-	if cnsconfig.ChannelMode == cns.Managed {
-		config.ChannelMode = cns.Managed
-		privateEndpoint = cnsconfig.ManagedSettings.PrivateEndpoint
-		infravnet = cnsconfig.ManagedSettings.InfrastructureNetworkID
-		nodeID = cnsconfig.ManagedSettings.NodeID
-	} else if cnsconfig.ChannelMode == cns.CRD {
-		config.ChannelMode = cns.CRD
-	} else if cnsconfig.ChannelMode == cns.MultiTenantCRD {
-		config.ChannelMode = cns.MultiTenantCRD
+	svccfg := common.ServiceConfig{
+		Version: version,
+		Name:    name,
+	}
+	if config.ChannelMode == cnstypes.Managed {
+		svccfg.ChannelModeManaged = true
+		privateEndpoint = config.ManagedSettings.PrivateEndpoint
+		infravnet = config.ManagedSettings.InfrastructureNetworkID
+		nodeID = config.ManagedSettings.NodeID
 	} else if acn.GetArg(acn.OptManaged).(bool) {
-		config.ChannelMode = cns.Managed
+		svccfg.ChannelModeManaged = true
 	}
 
-	disableTelemetry := cnsconfig.TelemetrySettings.DisableAll
+	disableTelemetry := config.TelemetrySettings.DisableAll
 	if !disableTelemetry {
-		ts := cnsconfig.TelemetrySettings
+		ts := config.TelemetrySettings
 		aiConfig := aitelemetry.AIConfig{
 			AppName:                      name,
 			AppVersion:                   version,
@@ -489,7 +473,7 @@ func main() {
 
 	// Create the key value store.
 	storeFileName := storeFileLocation + name + ".json"
-	config.Store, err = store.NewJsonFileStore(storeFileName, lockclient)
+	svccfg.Store, err = store.NewJsonFileStore(storeFileName, lockclient)
 	if err != nil {
 		logger.Errorf("Failed to create store file: %s, due to error %v\n", storeFileName, err)
 		return
@@ -502,7 +486,7 @@ func main() {
 	}
 	// Create CNS object.
 
-	httpRestService, err := restserver.NewHTTPRestService(&config, &wireserver.Client{HTTPClient: &http.Client{}}, nmaclient)
+	httpRestService, err := restserver.NewHTTPRestService(svccfg, &wireserver.Client{HTTPClient: &http.Client{}}, nmaclient)
 	if err != nil {
 		logger.Errorf("Failed to create CNS object, err:%v.\n", err)
 		return
@@ -528,15 +512,15 @@ func main() {
 
 	logger.Printf("[Azure CNS] Initialize HTTPRestService")
 	if httpRestService != nil {
-		if cnsconfig.UseHTTPS {
-			config.TlsSettings = localtls.TlsSettings{
-				TLSSubjectName:     cnsconfig.TLSSubjectName,
-				TLSCertificatePath: cnsconfig.TLSCertificatePath,
-				TLSPort:            cnsconfig.TLSPort,
+		if config.UseHTTPS {
+			svccfg.TLSSettings = localtls.TlsSettings{
+				TLSSubjectName:     config.TLSSubjectName,
+				TLSCertificatePath: config.TLSCertificatePath,
+				TLSPort:            config.TLSPort,
 			}
 		}
 
-		err = httpRestService.Init(&config)
+		err = httpRestService.Init(rootErrCh, svccfg)
 		if err != nil {
 			logger.Errorf("Failed to init HTTPService, err:%v.\n", err)
 			return
@@ -545,7 +529,7 @@ func main() {
 
 	// Initialze state in if CNS is running in CRD mode
 	// State must be initialized before we start HTTPRestService
-	if config.ChannelMode == cns.CRD {
+	if config.ChannelMode == cnstypes.CRD {
 		// Check the CNI statefile mount, and if the file is empty
 		// stub an empty JSON object
 		if err := cnireconciler.WriteObjectToCNIStatefile(); err != nil {
@@ -556,7 +540,7 @@ func main() {
 		// We might be configured to reinitialize state from the CNI instead of the apiserver.
 		// If so, we should check that the the CNI is new enough to support the state commands,
 		// otherwise we fall back to the existing behavior.
-		if cnsconfig.InitializeFromCNI {
+		if config.InitializeFromCNI {
 			var isGoodVer bool
 			isGoodVer, err = cnireconciler.IsDumpStateVer()
 			if err != nil {
@@ -564,17 +548,17 @@ func main() {
 			}
 
 			// override the prior config flag with the result of the ver check.
-			cnsconfig.InitializeFromCNI = isGoodVer
+			config.InitializeFromCNI = isGoodVer
 
-			if cnsconfig.InitializeFromCNI {
+			if config.InitializeFromCNI {
 				// Set the PodInfoVersion by initialization type, so that the
 				// PodInfo maps use the correct key schema
 				cns.GlobalPodInfoScheme = cns.InterfaceIDPodInfoScheme
 			}
 		}
-		logger.Printf("Set GlobalPodInfoScheme %v (InitializeFromCNI=%t)", cns.GlobalPodInfoScheme, cnsconfig.InitializeFromCNI)
+		logger.Printf("Set GlobalPodInfoScheme %v (InitializeFromCNI=%t)", cns.GlobalPodInfoScheme, config.InitializeFromCNI)
 
-		err = InitializeCRDState(rootCtx, httpRestService, cnsconfig)
+		err = InitializeCRDState(rootCtx, httpRestService, config)
 		if err != nil {
 			logger.Errorf("Failed to start CRD Controller, err:%v.\n", err)
 			return
@@ -590,8 +574,8 @@ func main() {
 
 	// Initialize multi-tenant controller if the CNS is running in MultiTenantCRD mode.
 	// It must be started before we start HTTPRestService.
-	if config.ChannelMode == cns.MultiTenantCRD {
-		err = InitializeMultiTenantController(rootCtx, httpRestService, *cnsconfig)
+	if config.ChannelMode == cnstypes.MultiTenantCRD {
+		err = InitializeMultiTenantController(rootCtx, httpRestService, *config)
 		if err != nil {
 			logger.Errorf("Failed to start multiTenantController, err:%v.\n", err)
 			return
@@ -607,7 +591,7 @@ func main() {
 
 	logger.Printf("[Azure CNS] Start HTTP listener")
 	if httpRestService != nil {
-		err = httpRestService.Start(&config)
+		err = httpRestService.Start(rootErrCh)
 		if err != nil {
 			logger.Errorf("Failed to start CNS, err:%v.\n", err)
 			return
@@ -615,12 +599,12 @@ func main() {
 	}
 
 	if !disableTelemetry {
-		go logger.SendHeartBeat(rootCtx, cnsconfig.TelemetrySettings.HeartBeatIntervalInMins)
-		go httpRestService.SendNCSnapShotPeriodically(rootCtx, cnsconfig.TelemetrySettings.SnapshotIntervalInMins)
+		go logger.SendHeartBeat(rootCtx, config.TelemetrySettings.HeartBeatIntervalInMins)
+		go httpRestService.SendNCSnapShotPeriodically(rootCtx, config.TelemetrySettings.SnapshotIntervalInMins)
 	}
 
 	// If CNS is running on managed DNC mode
-	if config.ChannelMode == cns.Managed {
+	if config.ChannelMode == cnstypes.Managed {
 		if privateEndpoint == "" || infravnet == "" || nodeID == "" {
 			logger.Errorf("[Azure CNS] Missing required values to run in managed mode: PrivateEndpoint: %s InfrastructureNetworkID: %s NodeID: %s",
 				privateEndpoint,
@@ -644,7 +628,7 @@ func main() {
 		}
 		go func(ep, vnet, node string) {
 			// Periodically poll DNC for node updates
-			tickerChannel := time.Tick(time.Duration(cnsconfig.ManagedSettings.NodeSyncIntervalInSeconds) * time.Second)
+			tickerChannel := time.Tick(time.Duration(config.ManagedSettings.NodeSyncIntervalInSeconds) * time.Second)
 			for {
 				<-tickerChannel
 				httpRestService.SyncNodeStatus(ep, vnet, node, json.RawMessage{})
@@ -814,7 +798,7 @@ func InitializeMultiTenantController(ctx context.Context, httpRestService cns.HT
 			select {
 			case <-tickerChannel:
 				timedCtx, cancel := context.WithTimeout(ctx, time.Duration(cnsconfig.SyncHostNCVersionIntervalMs)*time.Millisecond)
-				httpRestServiceImpl.SyncHostNCVersion(timedCtx, cnsconfig.ChannelMode)
+				httpRestServiceImpl.SyncHostNCVersion(timedCtx, cnsconfig.ChannelMode == cnstypes.CRD)
 				cancel()
 			case <-ctx.Done():
 				return
@@ -1049,7 +1033,7 @@ func InitializeCRDState(ctx context.Context, httpRestService cns.HTTPService, cn
 			select {
 			case <-tickerChannel:
 				timedCtx, cancel := context.WithTimeout(ctx, time.Duration(cnsconfig.SyncHostNCVersionIntervalMs)*time.Millisecond)
-				httpRestServiceImplementation.SyncHostNCVersion(timedCtx, cnsconfig.ChannelMode)
+				httpRestServiceImplementation.SyncHostNCVersion(timedCtx, cnsconfig.ChannelMode == cnstypes.CRD)
 				cancel()
 			case <-ctx.Done():
 				logger.Printf("exiting SyncHostNCVersion")

@@ -608,7 +608,8 @@ func TestGetNetworkContainerVersionStatus(t *testing.T) {
 func createNC(
 	t *testing.T,
 	params createOrUpdateNetworkContainerParams,
-	expectError bool) {
+	expectError bool,
+) {
 	if err := createOrUpdateNetworkContainerWithParams(t, params); err != nil {
 		t.Errorf("createOrUpdateNetworkContainerWithParams failed Err:%+v", err)
 		t.Fatal(err)
@@ -658,7 +659,8 @@ func publishNCViaCNS(t *testing.T,
 	networkID,
 	networkContainerID,
 	createNetworkContainerURL string,
-	expectError bool) error {
+	expectError bool,
+) error {
 	var (
 		body bytes.Buffer
 		resp cns.PublishNetworkContainerResponse
@@ -1076,7 +1078,7 @@ func startService() error {
 	}
 
 	nmagentClient := &fakes.NMAgentClientFake{}
-	service, err = NewHTTPRestService(&config, &fakes.WireserverClientFake{}, nmagentClient)
+	service, err = NewHTTPRestService(config, &fakes.WireserverClientFake{}, nmagentClient)
 	if err != nil {
 		return err
 	}
@@ -1122,13 +1124,13 @@ func startService() error {
 		file, _ := os.Create(cnsJsonFileName)
 		file.Close()
 
-		err = service.Init(&config)
+		err = service.Init(nil, config)
 		if err != nil {
 			logger.Errorf("Failed to Init CNS, err:%v.\n", err)
 			return err
 		}
 
-		err = service.Start(&config)
+		err = service.Start(nil)
 		if err != nil {
 			logger.Errorf("Failed to start CNS, err:%v.\n", err)
 			return err

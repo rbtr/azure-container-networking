@@ -168,7 +168,7 @@ func TestMain(m *testing.M) {
 	logger.InitLogger(logName, 0, 0, tmpLogDir+"/")
 	config := common.ServiceConfig{}
 
-	httpRestService, err := restserver.NewHTTPRestService(&config, &fakes.WireserverClientFake{}, &fakes.NMAgentClientFake{})
+	httpRestService, err := restserver.NewHTTPRestService(config, &fakes.WireserverClientFake{}, &fakes.NMAgentClientFake{})
 	svc = httpRestService.(*restserver.HTTPRestService)
 	svc.Name = "cns-test-server"
 	fakeNNC := v1alpha.NodeNetworkConfig{
@@ -211,13 +211,13 @@ func TestMain(m *testing.M) {
 	}
 
 	if httpRestService != nil {
-		err = httpRestService.Init(&config)
+		err = httpRestService.Init(nil, config)
 		if err != nil {
 			logger.Errorf("Failed to initialize HttpService, err:%v.\n", err)
 			return
 		}
 
-		err = httpRestService.Start(&config)
+		err = httpRestService.Start(nil)
 		if err != nil {
 			logger.Errorf("Failed to start HttpService, err:%v.\n", err)
 			return

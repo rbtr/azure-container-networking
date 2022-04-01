@@ -45,7 +45,8 @@ func (service *HTTPRestService) SetNodeOrchestrator(r *cns.SetOrchestratorTypeRe
 
 // SyncNodeStatus :- Retrieve the latest node state from DNC & returns the first occurence of returnCode and error with respect to contextFromCNI
 func (service *HTTPRestService) SyncNodeStatus(
-	dncEP, infraVnet, nodeID string, contextFromCNI json.RawMessage) (returnCode types.ResponseCode, errStr string) {
+	dncEP, infraVnet, nodeID string, contextFromCNI json.RawMessage,
+) (returnCode types.ResponseCode, errStr string) {
 	logger.Printf("[Azure CNS] SyncNodeStatus")
 	var (
 		resp             *http.Response
@@ -150,11 +151,11 @@ func (service *HTTPRestService) SyncNodeStatus(
 
 // SyncHostNCVersion will check NC version from NMAgent and save it as host NC version in container status.
 // If NMAgent NC version got updated, CNS will refresh the pending programming IP status.
-func (service *HTTPRestService) SyncHostNCVersion(ctx context.Context, channelMode string) {
+func (service *HTTPRestService) SyncHostNCVersion(ctx context.Context, markIPsAvailable bool) {
 	service.Lock()
 	defer service.Unlock()
 	start := time.Now()
-	err := service.syncHostNCVersion(ctx, channelMode)
+	err := service.syncHostNCVersion(ctx, markIPsAvailable)
 	if err != nil {
 		logger.Errorf("sync host error %v", err)
 	}
@@ -163,7 +164,7 @@ func (service *HTTPRestService) SyncHostNCVersion(ctx context.Context, channelMo
 
 var errNonExistentContainerStatus = errors.New("nonExistantContainerstatus")
 
-func (service *HTTPRestService) syncHostNCVersion(ctx context.Context, channelMode string) error {
+func (service *HTTPRestService) syncHostNCVersion(ctx context.Context, markIPsAvailable bool) error {
 	var hostVersionNeedsUpdateContainers []string
 	for idx := range service.state.ContainerStatus {
 		// Will open a separate PR to convert all the NC version related variable to int. Change from string to int is a pain.
@@ -211,7 +212,7 @@ func (service *HTTPRestService) syncHostNCVersion(ctx context.Context, channelMo
 		if !exist {
 			return errors.Wrapf(errNonExistentContainerStatus, "can't find NC with ID %s in service state, stop updating this host NC version", ncID)
 		}
-		if channelMode == cns.CRD {
+		if markIPsAvailable {
 			service.MarkIpsAsAvailableUntransacted(ncInfo.ID, version)
 		}
 		oldHostNCVersion := ncInfo.HostVersion
@@ -224,7 +225,8 @@ func (service *HTTPRestService) syncHostNCVersion(ctx context.Context, channelMo
 
 // This API will be called by CNS RequestController on CRD update.
 func (service *HTTPRestService) ReconcileNCState(
-	ncRequest *cns.CreateNetworkContainerRequest, podInfoByIP map[string]cns.PodInfo, nnc *v1alpha.NodeNetworkConfig) types.ResponseCode {
+	ncRequest *cns.CreateNetworkContainerRequest, podInfoByIP map[string]cns.PodInfo, nnc *v1alpha.NodeNetworkConfig,
+) types.ResponseCode {
 	logger.Printf("Reconciling NC state with podInfo %+v", podInfoByIP)
 	// check if ncRequest is null, then return as there is no CRD state yet
 	if ncRequest == nil {

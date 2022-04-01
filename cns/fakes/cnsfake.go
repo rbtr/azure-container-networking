@@ -267,11 +267,11 @@ func (fake *HTTPServiceFake) GetOption(string) interface{} {
 
 func (fake *HTTPServiceFake) SetOption(string, interface{}) {}
 
-func (fake *HTTPServiceFake) Start(*common.ServiceConfig) error {
+func (fake *HTTPServiceFake) Start(chan<- error) error {
 	return nil
 }
 
-func (fake *HTTPServiceFake) Init(*common.ServiceConfig) error {
+func (fake *HTTPServiceFake) Init(chan<- error, common.ServiceConfig) error {
 	return nil
 }
 

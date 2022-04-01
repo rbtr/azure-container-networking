@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Azure/azure-container-networking/cns"
 	"github.com/Azure/azure-container-networking/cns/logger"
+	"github.com/Azure/azure-container-networking/cns/types"
 	"github.com/Azure/azure-container-networking/common"
 	"github.com/pkg/errors"
 )
@@ -19,7 +19,7 @@ const (
 )
 
 type CNSConfig struct {
-	ChannelMode                 string
+	ChannelMode                 types.ChannelMode
 	InitializeFromCNI           bool
 	ManagedSettings             ManagedSettings
 	MetricsBindAddress          string
@@ -148,7 +148,7 @@ func SetCNSConfigDefaults(config *CNSConfig) {
 	setTelemetrySettingDefaults(&config.TelemetrySettings)
 	setManagedSettingDefaults(&config.ManagedSettings)
 	if config.ChannelMode == "" {
-		config.ChannelMode = cns.Direct
+		config.ChannelMode = types.Direct
 	}
 	if config.MetricsBindAddress == "" {
 		config.MetricsBindAddress = ":9090"

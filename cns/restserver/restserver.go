@@ -57,6 +57,7 @@ type HTTPRestService struct {
 	store                    store.KeyValueStore
 	state                    *httpRestServiceState
 	podsPendingIPAssignment  *bounded.TimedSet
+	channelModeManaged       bool
 	sync.RWMutex
 	dncPartitionKey string
 }
@@ -109,8 +110,8 @@ type networkInfo struct {
 }
 
 // NewHTTPRestService creates a new HTTP Service object.
-func NewHTTPRestService(config *common.ServiceConfig, wscli interfaceGetter, nmagentClient nmagentClient) (cns.HTTPService, error) {
-	service, err := cns.NewService(config.Name, config.Version, config.ChannelMode, config.Store)
+func NewHTTPRestService(config common.ServiceConfig, wscli interfaceGetter, nmagentClient nmagentClient) (cns.HTTPService, error) { //nolint:gocritic // ignore hugeParam
+	service, err := cns.NewService(config.Name, config.Version, config.Store)
 	if err != nil {
 		return nil, err
 	}
@@ -158,12 +159,13 @@ func NewHTTPRestService(config *common.ServiceConfig, wscli interfaceGetter, nma
 		routingTable:             routingTable,
 		state:                    serviceState,
 		podsPendingIPAssignment:  bounded.NewTimedSet(250), // nolint:gomnd // maxpods
+		channelModeManaged:       config.ChannelModeManaged,
 	}, nil
 }
 
 // Init starts the CNS listener.
-func (service *HTTPRestService) Init(config *common.ServiceConfig) error {
-	err := service.Initialize(config)
+func (service *HTTPRestService) Init(errCh chan<- error, config common.ServiceConfig) error { //nolint:gocritic // ignore hugeParam
+	err := service.Initialize(errCh, config)
 	if err != nil {
 		logger.Errorf("[Azure CNS]  Failed to initialize base service, err:%v.", err)
 		return err
@@ -243,11 +245,11 @@ func (service *HTTPRestService) Init(config *common.ServiceConfig) error {
 }
 
 // Start starts the CNS listener.
-func (service *HTTPRestService) Start(config *common.ServiceConfig) error {
+func (service *HTTPRestService) Start(errCh chan<- error) error {
 	// Start the listener.
 	// continue to listen on the normal endpoint for http traffic, this will be supported
 	// for sometime until partners migrate fully to https
-	if err := service.StartListener(config); err != nil {
+	if err := service.StartListener(errCh); err != nil {
 		return err
 	}
 

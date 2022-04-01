@@ -4,8 +4,6 @@
 package common
 
 import (
-	"errors"
-
 	"github.com/Azure/azure-container-networking/cns/logger"
 	acn "github.com/Azure/azure-container-networking/common"
 	"github.com/Azure/azure-container-networking/server/tls"
@@ -14,18 +12,17 @@ import (
 
 // Service implements behavior common to all services.
 type Service struct {
-	Name        string
-	Version     string
-	Options     map[string]interface{}
-	ErrChan     chan<- error
-	Store       store.KeyValueStore
-	ChannelMode string
+	Name    string
+	Version string
+	Options map[string]interface{}
+	ErrChan chan<- error
+	Store   store.KeyValueStore
 }
 
 // ServiceAPI defines base interface.
 type ServiceAPI interface {
-	Init(*ServiceConfig) error
-	Start(*ServiceConfig) error
+	Init(chan<- error, ServiceConfig) error
+	Start(chan<- error) error
 	Stop()
 	GetOption(string) interface{}
 	SetOption(string, interface{})
@@ -33,45 +30,35 @@ type ServiceAPI interface {
 
 // ServiceConfig specifies common configuration.
 type ServiceConfig struct {
-	Name        string
-	Version     string
-	Listener    *acn.Listener
-	ErrChan     chan<- error
-	Store       store.KeyValueStore
-	ChannelMode string
-	TlsSettings tls.TlsSettings
+	ChannelModeManaged bool
+	Name               string
+	Version            string
+	Listener           *acn.Listener
+	Store              store.KeyValueStore
+	TLSSettings        tls.TlsSettings
 }
 
 // NewService creates a new Service object.
-func NewService(name, version, channelMode string, store store.KeyValueStore) (*Service, error) {
-	logger.Debugf("[Azure CNS] Going to create a service object with name: %v. version: %v.", name, version)
+func NewService(name, version string, kvstore store.KeyValueStore) (*Service, error) {
+	logger.Debugf("[Azure CNS] Going to create a service object with name: %v. version: %v", name, version)
 
 	svc := &Service{
-		Name:        name,
-		Version:     version,
-		ChannelMode: channelMode,
-		Options:     make(map[string]interface{}),
-		Store:       store,
+		Name:    name,
+		Version: version,
+		Options: make(map[string]interface{}),
+		Store:   kvstore,
 	}
 
-	logger.Debugf("[Azure CNS] Finished creating service object with name: %v. version: %v. managed: %s", name, version, channelMode)
+	logger.Debugf("[Azure CNS] Finished creating service object with name: %v. version: %v", name, version)
 	return svc, nil
 }
 
 // Initialize initializes the service.
-func (service *Service) Initialize(config *ServiceConfig) error {
-	if config == nil {
-		err := "[Azure CNS Errror] Initialize called with nil ServiceConfig."
-		logger.Errorf(err)
-		return errors.New(err)
-	}
-
+func (service *Service) Initialize(config ServiceConfig) error { //nolint:gocritic // ignore hugeParam
 	logger.Debugf("[Azure CNS] Going to initialize the service: %+v with config: %+v.", service, config)
 
-	service.ErrChan = config.ErrChan
 	service.Store = config.Store
 	service.Version = config.Version
-	service.ChannelMode = config.ChannelMode
 
 	logger.Debugf("[Azure CNS] nitialized service: %+v with config: %+v.", service, config)
 

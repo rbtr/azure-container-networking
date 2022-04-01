@@ -139,31 +139,9 @@ func (service *HTTPRestService) saveNetworkContainerGoalState(
 	}
 
 	switch req.NetworkContainerType {
-	case cns.AzureContainerInstance:
-		fallthrough
-	case cns.Docker:
-		fallthrough
-	case cns.Kubernetes:
-		fallthrough
-	case cns.Basic:
-		fallthrough
-	case cns.JobObject:
-		fallthrough
-	case cns.COW:
-		fallthrough
-	case cns.WebApps:
+	case cns.AzureContainerInstance, cns.Basic, cns.COW, cns.Docker, cns.JobObject, cns.Kubernetes, cns.WebApps:
 		switch service.state.OrchestratorType {
-		case cns.Kubernetes:
-			fallthrough
-		case cns.ServiceFabric:
-			fallthrough
-		case cns.Batch:
-			fallthrough
-		case cns.DBforPostgreSQL:
-			fallthrough
-		case cns.AzureFirstParty:
-			fallthrough
-		case cns.WebApps: // todo: Is WebApps an OrchastratorType or ContainerType?
+		case cns.AzureFirstParty, cns.Batch, cns.DBforPostgreSQL, cns.Kubernetes, cns.ServiceFabric, cns.WebApps: // todo: Is WebApps an OrchastratorType or ContainerType?
 			podInfo, err := cns.UnmarshalPodInfo(req.OrchestratorContext)
 			if err != nil {
 				errBuf := fmt.Sprintf("Unmarshalling %s failed with error %v", req.NetworkContainerType, err)
@@ -175,9 +153,7 @@ func (service *HTTPRestService) saveNetworkContainerGoalState(
 			if service.state.ContainerIDByOrchestratorContext == nil {
 				service.state.ContainerIDByOrchestratorContext = make(map[string]string)
 			}
-
 			service.state.ContainerIDByOrchestratorContext[podInfo.Name()+podInfo.Namespace()] = req.NetworkContainerid
-
 		case cns.KubernetesCRD:
 			// Validate and Update the SecondaryIpConfig state
 			returnCode, returnMesage := service.updateIPConfigsStateUntransacted(req, existingSecondaryIPConfigs, hostVersion)
@@ -189,13 +165,11 @@ func (service *HTTPRestService) saveNetworkContainerGoalState(
 			logger.Errorf(errMsg)
 			return types.UnsupportedOrchestratorType, errMsg
 		}
-
 	default:
 		errMsg := fmt.Sprintf("Unsupported network container type %s", req.NetworkContainerType)
 		logger.Errorf(errMsg)
 		return types.UnsupportedNetworkContainerType, errMsg
 	}
-
 	service.saveState()
 	return 0, ""
 }
@@ -256,7 +230,8 @@ func (service *HTTPRestService) updateIPConfigsStateUntransacted(
 // If the IP is already added then it will be an idempotent call. Also note, caller will
 // acquire/release the service lock.
 func (service *HTTPRestService) addIPConfigStateUntransacted(ncID string, hostVersion int, ipconfigs,
-	existingSecondaryIPConfigs map[string]cns.SecondaryIPConfig) {
+	existingSecondaryIPConfigs map[string]cns.SecondaryIPConfig,
+) {
 	// add ipconfigs to state
 	for ipID, ipconfig := range ipconfigs {
 		// New secondary IP configs has new NC version however, CNS don't want to override existing IPs'with new
@@ -349,15 +324,7 @@ func (service *HTTPRestService) getNetworkContainerResponse(
 	defer service.Unlock()
 
 	switch service.state.OrchestratorType {
-	case cns.Kubernetes:
-		fallthrough
-	case cns.ServiceFabric:
-		fallthrough
-	case cns.Batch:
-		fallthrough
-	case cns.DBforPostgreSQL:
-		fallthrough
-	case cns.AzureFirstParty:
+	case cns.AzureFirstParty, cns.Batch, cns.DBforPostgreSQL, cns.Kubernetes, cns.ServiceFabric:
 		podInfo, err := cns.UnmarshalPodInfo(req.OrchestratorContext)
 		if err != nil {
 			getNetworkContainerResponse.Response.ReturnCode = types.UnexpectedError
@@ -393,7 +360,7 @@ func (service *HTTPRestService) getNetworkContainerResponse(
 				service.saveState()
 			}
 
-		} else if service.ChannelMode == cns.Managed {
+		} else if service.channelModeManaged {
 			// If the NC goal state doesn't exist in CNS running in managed mode, call DNC to retrieve the goal state
 			var (
 				dncEP     = service.GetOption(acn.OptPrivateEndpoint).(string)
@@ -516,7 +483,7 @@ func (service *HTTPRestService) attachOrDetachHelper(req cns.ConfigureContainerN
 	}
 
 	existing, ok := service.getNetworkContainerDetails(cns.SwiftPrefix + req.NetworkContainerid)
-	if service.ChannelMode == cns.Managed && operation == attach {
+	if service.channelModeManaged && operation == attach {
 		if ok {
 			if !existing.VfpUpdateComplete {
 				_, returnCode, message := service.isNCWaitingForUpdate(existing.CreateNetworkContainerRequest.Version, req.NetworkContainerid)
@@ -628,7 +595,8 @@ func (service *HTTPRestService) setNetworkStateJoined(networkID string) {
 
 // Join Network by calling nmagent
 func (service *HTTPRestService) joinNetwork(
-	networkID string) (*http.Response, error, error) {
+	networkID string,
+) (*http.Response, error, error) {
 	var err error
 	joinResponse, joinErr := nmagent.JoinNetwork(networkID)
 
