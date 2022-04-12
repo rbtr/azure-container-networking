@@ -153,9 +153,10 @@ azure-npm-binary:
 
 ##@ Containers
 
-CNI_IMAGE = azure-cni-manager
-CNS_IMAGE = azure-cns
-NPM_IMAGE = azure-npm
+ACNCLI_IMAGE = acncli
+CNI_IMAGE    = azure-cni-manager
+CNS_IMAGE    = azure-cns
+NPM_IMAGE    = azure-npm
 
 TAG               ?= $(VERSION)
 IMAGE_REGISTRY    ?= acnpublic.azurecr.io
@@ -211,16 +212,43 @@ container-info: # util target to write container info file. do not invoke direct
 	sudo chmod -R 777 $(IMAGE_DIR)
 	echo $(IMAGE):$(TAG) > $(IMAGE_DIR)/$(FILE)
 
+acncli-image-name: # util target to print the CNI manager image name.
+	@echo $(ACNCLI_IMAGE)
+
+acncli-image: ## build cni-manager container image.
+	$(MAKE) containerize-$(CONTAINER_BUILDER) \
+		PLATFORM=$(PLATFORM) \
+		DOCKERFILE=tools/acncli/Dockerfile \
+		REGISTRY=$(IMAGE_REGISTRY) \
+		IMAGE=$(ACNCLI_IMAGE) \
+		TAG=$(TAG)
+
+acncli-image-info: # util target to write cni-manager container info file.
+	$(MAKE) container-info IMAGE=$(ACNCLI_IMAGE) TAG=$(TAG) FILE=$(ACNCLI_IMAGE_INFO_FILE)
+
+acncli-image-push: ## push cni-manager container image.
+	$(MAKE) container-push \
+		PLATFORM=$(PLATFORM) \
+		REGISTRY=$(IMAGE_REGISTRY) \
+		IMAGE=$(ACNCLI_IMAGE) \
+		TAG=$(TAG)
+
+acncli-image-pull: ## pull cni-manager container image.
+	$(MAKE) container-pull \
+		PLATFORM=$(PLATFORM) \
+		REGISTRY=$(IMAGE_REGISTRY) \
+		IMAGE=$(ACNCLI_IMAGE) \
+		TAG=$(TAG)
+
 cni-manager-image-name: # util target to print the CNI manager image name.
 	@echo $(CNI_IMAGE)
 
 cni-manager-image: ## build cni-manager container image.
 	$(MAKE) containerize-$(CONTAINER_BUILDER) \
 		PLATFORM=$(PLATFORM) \
-		DOCKERFILE=tools/acncli/Dockerfile \
+		DOCKERFILE=cni/Dockerfile \
 		REGISTRY=$(IMAGE_REGISTRY) \
 		IMAGE=$(CNI_IMAGE) \
-		EXTRA_BUILD_ARGS='--build-arg PLATFORM=$(OS)_$(ARCH)' \
 		TAG=$(TAG)
 
 cni-manager-image-info: # util target to write cni-manager container info file.

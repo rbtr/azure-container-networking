@@ -1,0 +1,4 @@
+This files in this directory intentionally left blank.
+At build time CNI binaries are dropped here and embedded in to the mgr binary.
+_README is excluded due to the _ prefix.
+sum.txt will contain pre-compression SHAs.
