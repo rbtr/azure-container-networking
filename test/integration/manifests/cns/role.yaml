@@ -4,6 +4,14 @@ metadata:
   namespace: kube-system
   name: nodeNetConfigEditor
 rules:
-  - apiGroups: ["acn.azure.com"]
-    resources: ["nodenetworkconfigs"]
-    verbs: ["get", "list", "watch", "patch", "update"]
+- apiGroups: 
+  - acn.azure.com
+  resources: 
+  - nodenetworkconfigs
+  - clustersubnetstates
+  verbs:
+  - get
+  - list
+  - watch
+  - patch 
+  - update

@@ -4,23 +4,23 @@ package k8s
 
 import (
 	"context"
-	"log"
-
-	//"dnc/test/integration/goldpinger"
 	"errors"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-container-networking/crd/nodenetworkconfig"
 	"github.com/Azure/azure-container-networking/test/integration/goldpinger"
+	"github.com/Azure/azure-container-networking/test/integration/kube"
 	"github.com/Azure/azure-container-networking/test/integration/retry"
-	v1 "k8s.io/client-go/kubernetes/typed/apps/v1"
-
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	v1 "k8s.io/client-go/kubernetes/typed/apps/v1"
 	"k8s.io/client-go/util/homedir"
 )
 
@@ -86,12 +86,12 @@ todo:
 */
 
 func TestPodScaling(t *testing.T) {
-	clientset, err := mustGetClientset()
+	clientset, err := mustGetClientset(*kubeconfig)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	restConfig := mustGetRestConfig(t)
+	restConfig := mustGetRestConfig(t, *kubeconfig)
 	deployment, err := mustParseDeployment(gpDeployment)
 	if err != nil {
 		t.Fatal(err)
@@ -184,9 +184,33 @@ func TestPodScaling(t *testing.T) {
 				}
 				t.Log("all pods have been allocated IPs")
 			}) {
-				errors.New("Pods don't have IP's")
-				return
+				t.Error("some pods don't have IP's")
 			}
+
+			t.Run("nodenetworkconfig has converged", func(t *testing.T) {
+				clusterCheckCtx, cancel := context.WithTimeout(ctx, 20*time.Minute)
+				defer cancel()
+				nnccli, err := nodenetworkconfig.NewClient(restConfig)
+				if err != nil {
+					t.Fatal(err)
+				}
+				nodes, err := clientset.CoreV1().Nodes().List(clusterCheckCtx, metav1.ListOptions{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, node := range nodes.Items {
+					nnc, err := nnccli.Get(clusterCheckCtx, types.NamespacedName{Namespace: "kube-system", Name: node.Name})
+					if err != nil {
+						t.Fatal(err)
+					}
+					podList, err := kube.GetPodsByNode(clusterCheckCtx, clientset.CoreV1().Pods(""), node.Name)
+					if err != nil {
+						t.Fatal(err)
+					}
+					pods := kube.FilterHostnet(podList.Items)
+					kube.ValidateNNC(t, *nnc, int64(len(pods)), false)
+				}
+			})
 
 			t.Run("all pods can ping each other", func(t *testing.T) {
 				clusterCheckCtx, cancel := context.WithTimeout(ctx, 20*time.Minute)

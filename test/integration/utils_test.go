@@ -1,5 +1,3 @@
-//go:build integration
-
 package k8s
 
 import (
@@ -8,12 +6,10 @@ import (
 	"errors"
 	"io"
 	"log"
-	"strings"
-	"time"
-
-	// crd "dnc/requestcontroller/kubernetes"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-container-networking/test/integration/retry"
 	apiv1 "k8s.io/api/core/v1"
@@ -31,8 +27,8 @@ const (
 	SubnetNameLabel        = "kubernetes.azure.com/podnetwork-subnet"
 )
 
-func mustGetClientset() (*kubernetes.Clientset, error) {
-	config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+func mustGetClientset(kubeconfig string) (*kubernetes.Clientset, error) { //nolint:unused,deadcode // used by test
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
 		return nil, err
 	}
@@ -43,8 +39,8 @@ func mustGetClientset() (*kubernetes.Clientset, error) {
 	return clientset, nil
 }
 
-func mustGetRestConfig(t *testing.T) *rest.Config {
-	config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+func mustGetRestConfig(t *testing.T, kubeconfig string) *rest.Config { //nolint:unused,deadcode // used by test
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
 		t.Fatal(err)
 	}

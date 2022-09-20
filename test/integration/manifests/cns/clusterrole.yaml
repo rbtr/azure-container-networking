@@ -5,9 +5,17 @@ metadata:
   name: pod-reader-all-namespaces
   namespace: kube-system
 rules:
-- apiGroups: [""]
-  resources: ["pods"]
-  verbs: ["get", "watch", "list"]
-- apiGroups: [""]
-  resources: ["nodes"]
-  verbs: ["get"]
+- apiGroups: 
+  - ""
+  resources: 
+  - "pods"
+  verbs: 
+  - get
+  - watch
+  - list
+- apiGroups: 
+  - ""
+  resources: 
+  - nodes
+  verbs: 
+  - get

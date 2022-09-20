@@ -70,7 +70,7 @@ func TestMain(m *testing.M) {
 		os.Exit(exitCode)
 	}()
 
-	clientset, err := mustGetClientset()
+	clientset, err := mustGetClientset(*kubeconfig)
 	if err != nil {
 		return
 	}
