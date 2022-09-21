@@ -184,7 +184,7 @@ func TestPodScaling(t *testing.T) {
 				}
 				t.Log("all pods have been allocated IPs")
 			}) {
-				t.Error("some pods don't have IP's")
+				t.Error("some pods don't have IPs")
 			}
 
 			t.Run("nodenetworkconfig has converged", func(t *testing.T) {
