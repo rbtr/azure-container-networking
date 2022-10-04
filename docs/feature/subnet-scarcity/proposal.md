@@ -85,6 +85,8 @@ CNS watches Pods and adjusts the SecondaryIP Count immediately in reaction to Po
 #### [[3-1]](phase-3/1-watchpods.md) CNS watches Pods
 CNS will Watch for Pod events on its Node, and use the number of scheduled Pods to calculate the target Requested IP Count.
 
+#### [[3-2]](phase-3/2-zerooverhead) Dynamic scaling with zero overhead
+CNS will stop watching the ClusterSubnetState CRD. DNC-RC will monitor the subnet state and manipulate the Batch size and minimum free fraction, scaling all the way down to zero extra IPs in constrained subnet situations to make every possible IP available for Pod scheduling.
 
 #### [[3-2]](phase-3/2-nncbeta.md) Revise the NNC to v1beta1
 With the Scaler migration in [[Phase 2-3]](#2-3-scaler-properties-move-to-the-clustersubnet-crd), the NodeNetworkConfig will be revised to remove this object and optimize.
