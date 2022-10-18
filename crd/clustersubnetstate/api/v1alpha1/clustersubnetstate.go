@@ -14,6 +14,7 @@ import (
 // ClusterSubnetState is the Schema for the ClusterSubnetState API
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced
+// +kubebuilder:resource:shortName=css
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Exhausted",type=string,JSONPath=`.status.exhausted`
 // +kubebuilder:printcolumn:name="Updated",type=string,JSONPath=`.spec.timestamp`
@@ -21,13 +22,25 @@ type ClusterSubnetState struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
+	Spec   ClusterSubnetStateSpec   `json:"spec,omitempty"`
 	Status ClusterSubnetStateStatus `json:"status,omitempty"`
+}
+
+// Scaler groups IP request params together
+type Scaler struct {
+	Batch  int64   `json:"batch,omitempty"`
+	Buffer float64 `json:"buffer,omitempty"`
+}
+
+type ClusterSubnetStateSpec struct {
+	Scaler Scaler `json:"scaler,omitempty"`
 }
 
 // ClusterSubnetStateStatus defines the observed state of ClusterSubnetState
 type ClusterSubnetStateStatus struct {
-	Exhausted bool   `json:"exhausted"`
-	Timestamp string `json:"timestamp"`
+	Exhausted bool   `json:"exhausted,omitempty"`
+	Timestamp string `json:"timestamp,omitempty"`
+	Scaler    Scaler `json:"scaler,omitempty"`
 }
 
 // +kubebuilder:object:root=true

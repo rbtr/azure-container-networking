@@ -49,8 +49,7 @@ spec:
                   batch:
                     format: int64
                     type: integer
-                  buffer:
-                    type: number
+                  buffer: {}
                 type: object
             type: object
           status:
@@ -64,8 +63,7 @@ spec:
                   batch:
                     format: int64
                     type: integer
-                  buffer:
-                    type: number
+                  buffer: {}
                 type: object
               timestamp:
                 type: string
