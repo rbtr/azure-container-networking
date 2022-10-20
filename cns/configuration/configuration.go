@@ -38,6 +38,7 @@ type CNSConfig struct {
 	MSISettings                 MSISettings
 	ProgramSNATIPTables         bool
 	ManageEndpointState         bool
+	WatchPods                   bool
 }
 
 type TelemetrySettings struct {

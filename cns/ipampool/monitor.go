@@ -47,6 +47,7 @@ type metaState struct {
 type Options struct {
 	RefreshDelay time.Duration
 	MaxIPs       int64
+	WatchPods    bool
 }
 
 type Monitor struct {

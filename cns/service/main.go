@@ -53,6 +53,7 @@ import (
 	"github.com/avast/retry-go/v3"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	kuberuntime "k8s.io/apimachinery/pkg/runtime"
@@ -1079,6 +1080,7 @@ func InitializeCRDState(ctx context.Context, httpRestService cns.HTTPService, cn
 	// initialize the ipam pool monitor
 	poolOpts := ipampool.Options{
 		RefreshDelay: poolIPAMRefreshRateInMilliseconds * time.Millisecond,
+		WatchPods:    cnsconfig.WatchPods,
 	}
 	poolMonitor := ipampool.NewMonitor(httpRestServiceImplementation, scopedcli, clusterSubnetStateChan, &poolOpts)
 	httpRestServiceImplementation.IPAMPoolMonitor = poolMonitor
@@ -1131,6 +1133,9 @@ func InitializeCRDState(ctx context.Context, httpRestService cns.HTTPService, cn
 			&v1alpha.NodeNetworkConfig{}: {
 				Field: fields.SelectorFromSet(fields.Set{"metadata.name": nodeName}),
 			},
+			&corev1.Pod{}: {
+				Field: fields.SelectorFromSet(fields.Set{"spec.nodeName": nodeName}),
+			},
 		},
 	})
 
@@ -1174,6 +1179,11 @@ func InitializeCRDState(ctx context.Context, httpRestService cns.HTTPService, cn
 		if err := cssReconciler.SetupWithManager(manager); err != nil {
 			return errors.Wrapf(err, "failed to setup css reconciler with manager")
 		}
+	}
+
+	if cnsconfig.WatchPods {
+		// PodWatcher
+		// TODO
 	}
 
 	// adding some routes to the root service mux
