@@ -51,18 +51,17 @@ type Options struct {
 }
 
 type Monitor struct {
-	opts        *Options
-	spec        v1alpha.NodeNetworkConfigSpec
-	metastate   metaState
-	nnccli      nodeNetworkConfigSpecUpdater
-	httpService cns.HTTPService
-	cssSource   <-chan v1alpha1.ClusterSubnetState
-	nncSource   chan v1alpha.NodeNetworkConfig
-	started     chan interface{}
-	once        sync.Once
+	opts           *Options
+	spec           v1alpha.NodeNetworkConfigSpec
+	metastate      metaState
+	nnccli         nodeNetworkConfigSpecUpdater
+	httpService    cns.HTTPService
+	cssSource      <-chan v1alpha1.ClusterSubnetState
+	nncSource      chan v1alpha.NodeNetworkConfig
+	podcountSource <-chan int
 }
 
-func NewMonitor(httpService cns.HTTPService, nnccli nodeNetworkConfigSpecUpdater, cssSource <-chan v1alpha1.ClusterSubnetState, opts *Options) *Monitor {
+func NewMonitor(httpService cns.HTTPService, nnccli nodeNetworkConfigSpecUpdater, cssSource <-chan v1alpha1.ClusterSubnetState, podcountSource <-chan int, opts *Options) *Monitor {
 	if opts.RefreshDelay < 1 {
 		opts.RefreshDelay = DefaultRefreshDelay
 	}
@@ -70,12 +69,12 @@ func NewMonitor(httpService cns.HTTPService, nnccli nodeNetworkConfigSpecUpdater
 		opts.MaxIPs = DefaultMaxIPs
 	}
 	return &Monitor{
-		opts:        opts,
-		httpService: httpService,
-		nnccli:      nnccli,
-		cssSource:   cssSource,
-		nncSource:   make(chan v1alpha.NodeNetworkConfig),
-		started:     make(chan interface{}),
+		opts:           opts,
+		httpService:    httpService,
+		nnccli:         nnccli,
+		cssSource:      cssSource,
+		nncSource:      make(chan v1alpha.NodeNetworkConfig),
+		podcountSource: podcountSource,
 	}
 }
 
@@ -84,6 +83,18 @@ func NewMonitor(httpService cns.HTTPService, nnccli nodeNetworkConfigSpecUpdater
 // Subsequently, it will run run once per RefreshDelay and attempt to re-reconcile the pool.
 func (pm *Monitor) Start(ctx context.Context) error {
 	logger.Printf("[ipam-pool-monitor] Starting CNS IPAM Pool Monitor")
+
+	// we have to wait for *all* of these selects to receive at least once
+	// before we consider ourselves started and continue on to our reconcile.
+	started := make(chan struct{})
+	var cssSourceOnce, nncSourceOnce, podcountSourceOnce, tickerOnce sync.Once
+	var wg sync.WaitGroup
+	wg.Add(4)
+	go func() {
+		wg.Done()
+		close(started)
+	}()
+
 	ticker := time.NewTicker(pm.opts.RefreshDelay)
 	defer ticker.Stop()
 	for {
@@ -92,13 +103,7 @@ func (pm *Monitor) Start(ctx context.Context) error {
 		case <-ctx.Done(): // calling context has closed, we'll exit.
 			return errors.Wrap(ctx.Err(), "pool monitor context closed")
 		case <-ticker.C: // attempt to reconcile every tick.
-			select {
-			default:
-				// if we have NOT initialized and enter this case, we continue out of this iteration and let the for loop begin again.
-				continue
-			case <-pm.started: // this blocks until we have initialized
-				// if we have initialized and enter this case, we proceed out of the select and continue to reconcile.
-			}
+			tickerOnce.Do(wg.Done)
 		case css := <-pm.cssSource: // received an updated ClusterSubnetState
 			pm.metastate.exhausted = css.Status.Exhausted
 			logger.Printf("subnet exhausted status = %t", pm.metastate.exhausted)
@@ -106,14 +111,8 @@ func (pm *Monitor) Start(ctx context.Context) error {
 				subnetLabel: pm.metastate.subnet, subnetCIDRLabel: pm.metastate.subnetCIDR,
 				podnetARMIDLabel: pm.metastate.subnetARMID, subnetExhaustionStateLabel: strconv.FormatBool(pm.metastate.exhausted),
 			}).Inc()
-			select {
-			default:
-				// if we have NOT initialized and enter this case, we continue out of this iteration and let the for loop begin again.
-				continue
-			case <-pm.started: // this blocks until we have initialized
-				// if we have initialized and enter this case, we proceed out of the select and continue to reconcile.
-			}
-		case nnc := <-pm.nncSource: // received a new NodeNetworkConfig, extract the data from it and re-reconcile.
+			cssSourceOnce.Do(wg.Done)
+		case nnc := <-pm.nncSource: // received a new NodeNetworkConfig
 			if len(nnc.Status.NetworkContainers) > 0 {
 				// Set SubnetName, SubnetAddressSpace and Pod Network ARM ID values to the global subnet, subnetCIDR and subnetARM variables.
 				pm.metastate.subnet = nnc.Status.NetworkContainers[0].SubnetName
@@ -134,12 +133,23 @@ func (pm *Monitor) Start(ctx context.Context) error {
 			pm.metastate.batch = scaler.BatchSize
 			pm.metastate.max = scaler.MaxIPCount
 			pm.metastate.minFreeCount, pm.metastate.maxFreeCount = CalculateMinFreeIPs(scaler), CalculateMaxFreeIPs(scaler)
-			pm.once.Do(func() {
-				pm.spec = nnc.Spec // set the spec from the NNC initially (afterwards we write the Spec so we know target state).
-				logger.Printf("[ipam-pool-monitor] set initial pool spec %+v", pm.spec)
-				close(pm.started) // close the init channel the first time we fully receive a NodeNetworkConfig.
-			})
+			nncSourceOnce.Do(wg.Done)
+			)
+		case podcount := <-pm.podcountSource: // received an updated pod count
+			logger.Printf("demand=%d", podcount)
+			podcountSourceOnce.Do(wg.Done)
 		}
+
+		// block until all previous select cases have received at least once,
+		// and we consider ourselves started.
+		select {
+		default:
+			// if we have NOT initialized and enter this case, we continue out of this iteration and let the for loop begin again.
+			continue
+		case <-started: // this blocks until we have initialized
+			// if we have initialized, we proceed out of the select and continue to reconcile.
+		}
+
 		// if control has flowed through the select(s) to this point, we can now reconcile.
 		err := pm.reconcile(ctx)
 		if err != nil {

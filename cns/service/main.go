@@ -32,6 +32,7 @@ import (
 	"github.com/Azure/azure-container-networking/cns/ipampool"
 	cssctrl "github.com/Azure/azure-container-networking/cns/kubecontroller/clustersubnetstate"
 	nncctrl "github.com/Azure/azure-container-networking/cns/kubecontroller/nodenetworkconfig"
+	"github.com/Azure/azure-container-networking/cns/kubecontroller/podwatcher"
 	"github.com/Azure/azure-container-networking/cns/logger"
 	"github.com/Azure/azure-container-networking/cns/multitenantcontroller"
 	"github.com/Azure/azure-container-networking/cns/multitenantcontroller/multitenantoperator"
@@ -1182,8 +1183,13 @@ func InitializeCRDState(ctx context.Context, httpRestService cns.HTTPService, cn
 	}
 
 	if cnsconfig.WatchPods {
-		// PodWatcher
-		// TODO
+
+		// build the PodWatcher
+		podWatcher := podwatcher.New(nodeName, podcountCh)
+		//
+		if err := podWatcher.SetupWithManager(manager); err != nil {
+			return errors.Wrap(err, "failed to setup podwatcher with manager")
+		}
 	}
 
 	// adding some routes to the root service mux
