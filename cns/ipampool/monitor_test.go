@@ -29,7 +29,7 @@ type directUpdatePoolMonitor struct {
 func (d *directUpdatePoolMonitor) Update(nnc *v1alpha.NodeNetworkConfig) error {
 	scaler := nnc.Status.Scaler
 	d.m.spec = nnc.Spec
-	d.m.metastate.minFreeCount, d.m.metastate.maxFreeCount = CalculateMinFreeIPs(scaler), CalculateMaxFreeIPs(scaler)
+	d.m.metastate.buffer = float64(scaler.RequestThresholdPercent) / 100
 	return nil
 }
 
@@ -463,26 +463,18 @@ func TestPoolSizeDecreaseToReallyLow(t *testing.T) {
 
 	// Pool monitor does nothing, as the current number of IPs falls in the threshold
 	assert.NoError(t, poolmonitor.reconcile(context.Background()))
+	assert.Equal(t, initState.allocated, poolmonitor.spec.RequestedIPCount)
 
-	// Now Drop the Assigned count to really low, say 3. This should trigger release in 2 batches
+	// Now Drop the Assigned count to really low, say 3. This should trigger release.
 	assert.NoError(t, fakecns.SetNumberOfAssignedIPs(3))
 
-	// Pool monitor does nothing, as the current number of IPs falls in the threshold
+	// Pool monitor releases IPs down to a Request of 10.
 	assert.NoError(t, poolmonitor.reconcile(context.Background()))
 
-	// Ensure the size of the requested spec is still the same
-	assert.Len(t, poolmonitor.spec.IPsNotInUse, int(initState.batch))
-
-	// Ensure the request ipcount is now one batch size smaller than the initial IP count
-	assert.Equal(t, initState.allocated-initState.batch, poolmonitor.spec.RequestedIPCount)
-
-	// Reconcile again, it should release the second batch
-	assert.NoError(t, poolmonitor.reconcile(context.Background()))
-
-	// Ensure the size of the requested spec is still the same
+	// Ensure that two batches were released.c
 	assert.Len(t, poolmonitor.spec.IPsNotInUse, int(initState.batch*2))
 
-	// Ensure the request ipcount is now one batch size smaller than the initial IP count
+	// Ensure the request ipcount is now two batch sizes smaller than the initial IP count
 	assert.Equal(t, initState.allocated-(initState.batch*2), poolmonitor.spec.RequestedIPCount)
 
 	assert.NoError(t, fakerc.Reconcile(true))
@@ -532,14 +524,6 @@ func TestDecreaseWithPendingRelease(t *testing.T) {
 
 	// reallocate some IPs
 	assert.NoError(t, fakecns.SetNumberOfAssignedIPs(40))
-	assert.NoError(t, poolmonitor.reconcile(context.Background()))
-
-	// Ensure poolmonitor asked for a multiple of batch size
-	assert.EqualValues(t, 64, poolmonitor.spec.RequestedIPCount)
-	assert.Len(t, poolmonitor.spec.IPsNotInUse, int(initState.pendingRelease))
-
-	// trigger a batch release
-	assert.NoError(t, fakecns.SetNumberOfAssignedIPs(30))
 	assert.NoError(t, poolmonitor.reconcile(context.Background()))
 
 	// Ensure poolmonitor asked for a multiple of batch size

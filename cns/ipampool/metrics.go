@@ -142,17 +142,17 @@ func init() {
 
 func observeIPPoolState(state ipPoolState, meta metaState) {
 	labels := []string{meta.subnet, meta.subnetCIDR, meta.subnetARMID}
-	ipamAllocatedIPCount.WithLabelValues(labels...).Set(float64(state.allocatedToPods))
+	ipamAllocatedIPCount.WithLabelValues(labels...).Set(float64(state.assigned))
 	ipamAvailableIPCount.WithLabelValues(labels...).Set(float64(state.available))
 	ipamBatchSize.WithLabelValues(labels...).Set(float64(meta.batch))
-	ipamCurrentAvailableIPcount.WithLabelValues(labels...).Set(float64(state.currentAvailableIPs))
-	ipamExpectedAvailableIPCount.WithLabelValues(labels...).Set(float64(state.expectedAvailableIPs))
+	ipamCurrentAvailableIPcount.WithLabelValues(labels...).Set(float64(state.currentAvailable))
+	ipamExpectedAvailableIPCount.WithLabelValues(labels...).Set(float64(state.expectedAvailable))
 	ipamMaxIPCount.WithLabelValues(labels...).Set(float64(meta.max))
 	ipamPendingProgramIPCount.WithLabelValues(labels...).Set(float64(state.pendingProgramming))
 	ipamPendingReleaseIPCount.WithLabelValues(labels...).Set(float64(state.pendingRelease))
 	ipamPrimaryIPCount.WithLabelValues(labels...).Set(float64(len(meta.primaryIPAddresses)))
-	ipamRequestedIPConfigCount.WithLabelValues(labels...).Set(float64(state.requestedIPs))
-	ipamTotalIPCount.WithLabelValues(labels...).Set(float64(state.totalIPs))
+	ipamRequestedIPConfigCount.WithLabelValues(labels...).Set(float64(state.requested))
+	ipamTotalIPCount.WithLabelValues(labels...).Set(float64(state.allocated))
 	if meta.exhausted {
 		ipamSubnetExhaustionState.WithLabelValues(labels...).Set(float64(subnetIPExhausted))
 	} else {
