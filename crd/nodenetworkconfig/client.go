@@ -88,14 +88,23 @@ func (i *Installer) InstallOrUpdate(ctx context.Context) (*v1.CustomResourceDefi
 
 // Client provides methods to interact with instances of the NodeNetworkConfig custom resource.
 type Client struct {
-	cli client.Client
+	cli      client.Client
+	identity client.FieldOwner
 }
 
 // NewClient creates a new NodeNetworkConfig client around the passed ctrlcli.Client.
-func NewClient(cli client.Client) *Client {
+func NewClient(cli client.Client, identity string) *Client {
 	return &Client{
-		cli: cli,
+		cli:      cli,
+		identity: client.FieldOwner(identity),
 	}
+}
+
+// Create makes a new NodeNetworkConfig identified by the NamespacedName.
+func (c *Client) Create(ctx context.Context, key types.NamespacedName) (*v1alpha.NodeNetworkConfig, error) {
+	obj := skel(key)
+	err := c.cli.Create(ctx, obj, c.identity)
+	return obj, errors.Wrapf(err, "failed to create nnc %v", key)
 }
 
 // Get returns the NodeNetworkConfig identified by the NamespacedName.
@@ -105,19 +114,28 @@ func (c *Client) Get(ctx context.Context, key types.NamespacedName) (*v1alpha.No
 	return nodeNetworkConfig, errors.Wrapf(err, "failed to get nnc %v", key)
 }
 
-// PatchSpec performs a server-side patch of the passed NodeNetworkConfigSpec to the NodeNetworkConfig specified by the NamespacedName.
-func (c *Client) PatchSpec(ctx context.Context, key types.NamespacedName, spec *v1alpha.NodeNetworkConfigSpec, fieldManager string) (*v1alpha.NodeNetworkConfig, error) {
-	obj := genPatchSkel(key)
+// Patch performs a server-side patch of the passed NodeNetworkConfigSpec to the NodeNetworkConfig specified by the NamespacedName.
+func (c *Client) Patch(ctx context.Context, key types.NamespacedName, spec *v1alpha.NodeNetworkConfigSpec) (*v1alpha.NodeNetworkConfig, error) {
+	obj := skel(key)
 	obj.Spec = *spec
-	if err := c.cli.Patch(ctx, obj, client.Apply, client.ForceOwnership, client.FieldOwner(fieldManager)); err != nil {
+	if err := c.cli.Patch(ctx, obj, client.Apply, client.ForceOwnership, c.identity); err != nil {
 		return nil, errors.Wrap(err, "failed to patch nnc")
 	}
 	return obj, nil
 }
 
-// UpdateSpec does a fetch, deepcopy, and update of the NodeNetworkConfig with the passed spec.
-// Deprecated: UpdateSpec is deprecated and usage should migrate to PatchSpec.
-func (c *Client) UpdateSpec(ctx context.Context, key types.NamespacedName, spec *v1alpha.NodeNetworkConfigSpec) (*v1alpha.NodeNetworkConfig, error) {
+func (c *Client) PatchStatus(ctx context.Context, key types.NamespacedName, status *v1alpha.NodeNetworkConfigStatus) (*v1alpha.NodeNetworkConfig, error) {
+	obj := skel(key)
+	obj.Status = *status
+	if err := c.cli.Status().Patch(ctx, obj, client.Apply, client.ForceOwnership, c.identity); err != nil {
+		return nil, errors.Wrap(err, "failed to patch nnc status")
+	}
+	return obj, nil
+}
+
+// Update does a fetch, deepcopy, and update of the NodeNetworkConfig with the passed spec.
+// Deprecated: Update is deprecated and usage should migrate to PatchSpec.
+func (c *Client) Update(ctx context.Context, key types.NamespacedName, spec *v1alpha.NodeNetworkConfigSpec) (*v1alpha.NodeNetworkConfig, error) {
 	nnc, err := c.Get(ctx, key)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get nnc")
@@ -129,19 +147,19 @@ func (c *Client) UpdateSpec(ctx context.Context, key types.NamespacedName, spec 
 	return nnc, nil
 }
 
-// SetOwnerRef sets the owner of the NodeNetworkConfig to the given object, using HTTP Patch
-func (c *Client) SetOwnerRef(ctx context.Context, key types.NamespacedName, owner metav1.Object, fieldManager string) (*v1alpha.NodeNetworkConfig, error) {
-	obj := genPatchSkel(key)
+// SetOwnerRef sets the owner of the NodeNetworkConfig to the given object, using HTTP Patch.
+func (c *Client) SetOwnerRef(ctx context.Context, key types.NamespacedName, owner metav1.Object) (*v1alpha.NodeNetworkConfig, error) {
+	obj := skel(key)
 	if err := ctrlutil.SetControllerReference(owner, obj, Scheme); err != nil {
 		return nil, errors.Wrapf(err, "failed to set controller reference for nnc")
 	}
-	if err := c.cli.Patch(ctx, obj, client.Apply, client.ForceOwnership, client.FieldOwner(fieldManager)); err != nil {
+	if err := c.cli.Patch(ctx, obj, client.Apply, client.ForceOwnership, c.identity); err != nil {
 		return nil, errors.Wrapf(err, "failed to patch nnc")
 	}
 	return obj, nil
 }
 
-func genPatchSkel(key types.NamespacedName) *v1alpha.NodeNetworkConfig {
+func skel(key types.NamespacedName) *v1alpha.NodeNetworkConfig {
 	return &v1alpha.NodeNetworkConfig{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: v1alpha.GroupVersion.String(),

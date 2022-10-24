@@ -146,7 +146,7 @@ func (r *Reconciler) Started(ctx context.Context) bool {
 
 // SetupWithManager Sets up the reconciler with a new manager, filtering using NodeNetworkConfigFilter on nodeName.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager, node *v1.Node) error {
-	r.nnccli = nodenetworkconfig.NewClient(mgr.GetClient())
+	r.nnccli = nodenetworkconfig.NewClient(mgr.GetClient(), "azure-cns")
 	err := ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha.NodeNetworkConfig{}).
 		WithEventFilter(predicate.Funcs{

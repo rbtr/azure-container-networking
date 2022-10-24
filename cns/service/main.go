@@ -1068,19 +1068,19 @@ func InitializeCRDState(ctx context.Context, httpRestService cns.HTTPService, cn
 	if err != nil {
 		return errors.Wrap(err, "failed to create ctrl client")
 	}
-	nnccli := nodenetworkconfig.NewClient(directcli)
+	directnnccli := nodenetworkconfig.NewClient(directcli, "azure-cns")
 	if err != nil {
 		return errors.Wrap(err, "failed to create NNC client")
 	}
 	// TODO(rbtr): nodename and namespace should be in the cns config
-	scopedcli := nncctrl.NewScopedClient(nnccli, types.NamespacedName{Namespace: "kube-system", Name: nodeName})
+	directscopedcli := nncctrl.NewScopedClient(directnnccli, types.NamespacedName{Namespace: "kube-system", Name: nodeName})
 
 	clusterSubnetStateChan := make(chan v1alpha1.ClusterSubnetState)
 	// initialize the ipam pool monitor
 	poolOpts := ipampool.Options{
 		RefreshDelay: poolIPAMRefreshRateInMilliseconds * time.Millisecond,
 	}
-	poolMonitor := ipampool.NewMonitor(httpRestServiceImplementation, scopedcli, clusterSubnetStateChan, &poolOpts)
+	poolMonitor := ipampool.NewMonitor(httpRestServiceImplementation, directscopedcli, clusterSubnetStateChan, &poolOpts)
 	httpRestServiceImplementation.IPAMPoolMonitor = poolMonitor
 
 	// reconcile initial CNS state from CNI or apiserver.
@@ -1100,7 +1100,7 @@ func InitializeCRDState(ctx context.Context, httpRestService cns.HTTPService, cn
 		err = retry.Do(func() error {
 			attempt++
 			logger.Printf("reconciling initial CNS state attempt: %d", attempt)
-			err = reconcileInitialCNSState(ctx, scopedcli, httpRestServiceImplementation, podInfoByIPProvider)
+			err = reconcileInitialCNSState(ctx, directscopedcli, httpRestServiceImplementation, podInfoByIPProvider)
 			if err != nil {
 				logger.Errorf("failed to reconcile initial CNS state, attempt: %d err: %v", attempt, err)
 			}
@@ -1238,5 +1238,7 @@ func InitializeCRDState(ctx context.Context, httpRestService cns.HTTPService, cn
 	}()
 	logger.Printf("initialized and started SyncHostNCVersion loop")
 
-	return nil
+	// create the empty NodeNetworkConfig
+	err = nncctrl.Create(ctx, directnnccli, node)
+	return errors.Wrap(err, "failed to create initial NodeNetworkConfig")
 }
