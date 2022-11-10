@@ -77,12 +77,15 @@ CNS_AI_PATH=$(ACN_PACKAGE_PATH)/cns/logger.aiMetadata
 NPM_AI_PATH=$(ACN_PACKAGE_PATH)/npm.aiMetadata
 
 # Tool paths
+CILIUM			:= $(TOOLS_BIN_DIR)/cilium
 CONTROLLER_GEN  := $(TOOLS_BIN_DIR)/controller-gen
 GOCOV           := $(TOOLS_BIN_DIR)/gocov
 GOCOV_XML       := $(TOOLS_BIN_DIR)/gocov-xml
 GOFUMPT         := $(TOOLS_BIN_DIR)/gofumpt
 GOLANGCI_LINT   := $(TOOLS_BIN_DIR)/golangci-lint
 GO_JUNIT_REPORT := $(TOOLS_BIN_DIR)/go-junit-report
+HELM			:= $(TOOLS_BIN_DIR)/helm
+KUBECTL			:= $(TOOLS_BIN_DIR)/kubectl
 MOCKGEN         := $(TOOLS_BIN_DIR)/mockgen
 
 # Archive file names.
@@ -745,13 +748,18 @@ setup: tools install-hooks gitconfig ## performs common required repo setup
 $(TOOLS_DIR)/go.mod:
 	cd $(TOOLS_DIR); go mod init && go mod tidy
 
+$(CILIUM):
+	mkdir -p $(TOOLS_BIN_DIR)
+	cd /tmp && curl -L --fail --remote-name-all https://github.com/cilium/cilium-cli/releases/download/$$(curl -s https://raw.githubusercontent.com/cilium/cilium-cli/master/stable.txt)/cilium-$(OS)-$(ARCH).tar.gz{,.sha256sum}
+	cd /tmp && sha256sum --check cilium-$(OS)-$(ARCH).tar.gz.sha256sum
+	tar xzvfC /tmp/cilium-$(OS)-$(ARCH).tar.gz $(TOOLS_BIN_DIR)
+
+cilium: $(CILIUM) ## Download the Cilium CLI binary
+
 $(CONTROLLER_GEN): $(TOOLS_DIR)/go.mod
 	cd $(TOOLS_DIR); go mod download; go build -tags=tools -o bin/controller-gen sigs.k8s.io/controller-tools/cmd/controller-gen
 
 controller-gen: $(CONTROLLER_GEN) ## Build controller-gen
-
-protoc: 
-	source ${REPO_ROOT}/scripts/install-protoc.sh
 
 $(GOCOV): $(TOOLS_DIR)/go.mod
 	cd $(TOOLS_DIR); go mod download; go build -tags=tools -o bin/gocov github.com/axw/gocov/gocov
@@ -777,6 +785,21 @@ $(GO_JUNIT_REPORT): $(TOOLS_DIR)/go.mod
 	cd $(TOOLS_DIR); go mod download; go build -tags=tools -o bin/go-junit-report github.com/jstemmer/go-junit-report
 
 go-junit-report: $(GO_JUNIT_REPORT) ## Build go-junit-report
+
+$(HELM): 
+	mkdir -p $(TOOLS_BIN_DIR)
+	TAG=$$(curl -Ls https://api.github.com/repos/helm/helm/releases/latest | jq -r .tag_name); \
+	curl -Lso /tmp/helm.tar.gz https://get.helm.sh/helm-$$TAG-$(OS)-$(ARCH).tar.gz; \
+	tar -C /tmp -x $(OS)-$(ARCH)/helm -f /tmp/helm.tar.gz; \
+	cp /tmp/$(OS)-$(ARCH)/helm $(HELM)
+
+helm: $(HELM) ## Download the latest helm binary
+
+$(KUBECTL):
+	mkdir -p $(TOOLS_BIN_DIR)
+	curl -Lo $(KUBECTL) "https://dl.k8s.io/release/$$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/$(OS)/$(ARCH)/kubectl"; chmod +x $(KUBECTL)
+
+kubectl: $(KUBECTL) ## Download the latest kubectl binary
 
 $(MOCKGEN): $(TOOLS_DIR)/go.mod
 	cd $(TOOLS_DIR); go mod download; go build -tags=tools -o bin/mockgen github.com/golang/mock/mockgen
