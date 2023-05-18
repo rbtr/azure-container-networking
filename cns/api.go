@@ -48,6 +48,7 @@ type HTTPService interface {
 	GetPendingReleaseIPConfigs() []IPConfigurationStatus
 	GetPodIPConfigState() map[string]IPConfigurationStatus
 	MarkIPAsPendingRelease(numberToMark int) (map[string]IPConfigurationStatus, error)
+	MarkNIPsPendingRelease(n int) (map[string]IPConfigurationStatus, error)
 }
 
 // This is used for KubernetesCRD orchestrator Type where NC has multiple ips.
@@ -271,13 +272,13 @@ type NodeConfiguration struct {
 	NodeSubnet Subnet
 }
 
+// IpamPoolMonitorStateSnapshot struct to expose state values for IPAMPoolMonitor struct
 type IPAMPoolMonitor interface {
 	Start(ctx context.Context) error
 	Update(nnc *v1alpha.NodeNetworkConfig) error
 	GetStateSnapshot() IpamPoolMonitorStateSnapshot
 }
 
-// IpamPoolMonitorStateSnapshot struct to expose state values for IPAMPoolMonitor struct
 type IpamPoolMonitorStateSnapshot struct {
 	MinimumFreeIps           int64
 	MaximumFreeIps           int64

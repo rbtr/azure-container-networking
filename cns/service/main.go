@@ -30,6 +30,7 @@ import (
 	"github.com/Azure/azure-container-networking/cns/healthserver"
 	"github.com/Azure/azure-container-networking/cns/hnsclient"
 	"github.com/Azure/azure-container-networking/cns/ipampool"
+	ipampoolv2 "github.com/Azure/azure-container-networking/cns/ipampool/v2"
 	cssctrl "github.com/Azure/azure-container-networking/cns/kubecontroller/clustersubnetstate"
 	nncctrl "github.com/Azure/azure-container-networking/cns/kubecontroller/nodenetworkconfig"
 	"github.com/Azure/azure-container-networking/cns/logger"
@@ -1155,7 +1156,12 @@ func InitializeCRDState(ctx context.Context, httpRestService cns.HTTPService, cn
 	poolOpts := ipampool.Options{
 		RefreshDelay: poolIPAMRefreshRateInMilliseconds * time.Millisecond,
 	}
-	poolMonitor := ipampool.NewMonitor(httpRestServiceImplementation, scopedcli, clusterSubnetStateChan, &poolOpts)
+	var poolMonitor cns.IPAMPoolMonitor
+	if cnsconfig.EnabledIPAMv2 {
+		poolMonitor = ipampoolv2.NewMonitor(httpRestServiceImplementation, scopedcli, clusterSubnetStateChan, &poolOpts)
+	} else {
+		poolMonitor = ipampool.NewMonitor(httpRestServiceImplementation, scopedcli, clusterSubnetStateChan, &poolOpts)
+	}
 	httpRestServiceImplementation.IPAMPoolMonitor = poolMonitor
 
 	logger.Printf("Reconciling initial CNS state")

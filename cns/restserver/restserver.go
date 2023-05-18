@@ -30,10 +30,8 @@ import (
 // All helper/utility functions - util.go
 // Constants - const.go
 
-var (
-	// Named Lock for accessing different states in httpRestServiceState
-	namedLock = acn.InitNamedLock()
-)
+// Named Lock for accessing different states in httpRestServiceState
+var namedLock = acn.InitNamedLock()
 
 type interfaceGetter interface {
 	GetInterfaces(ctx context.Context) (*wireserver.GetInterfacesResult, error)

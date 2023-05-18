@@ -44,6 +44,7 @@ type CNSConfig struct {
 	CNIConflistFilepath                  string
 	PopulateHomeAzCacheRetryIntervalSecs int
 	MellanoxMonitorIntervalSecs          int
+	EnabledIPAMv2                        bool
 }
 
 type TelemetrySettings struct {
