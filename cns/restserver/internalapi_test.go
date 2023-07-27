@@ -672,8 +672,6 @@ func TestReconcileNCWithExistingStateFromInterfaceID(t *testing.T) {
 	restartService()
 	setEnv(t)
 	setOrchestratorTypeInternal(cns.KubernetesCRD)
-	cns.GlobalPodInfoScheme = cns.InterfaceIDPodInfoScheme
-	defer func() { cns.GlobalPodInfoScheme = cns.KubernetesPodInfoScheme }()
 
 	secondaryIPConfigs := make(map[string]cns.SecondaryIPConfig)
 

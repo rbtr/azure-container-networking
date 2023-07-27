@@ -143,17 +143,6 @@ func (f PodInfoByIPProviderFunc) PodInfoByIP() (map[string]PodInfo, error) {
 	return f()
 }
 
-// podInfoScheme indicates which schema should be used when generating
-// the map key in the Key() function on a podInfo object.
-type podInfoScheme int
-
-const (
-	KubernetesPodInfoScheme podInfoScheme = iota
-	InterfaceIDPodInfoScheme
-)
-
-var GlobalPodInfoScheme podInfoScheme = InterfaceIDPodInfoScheme
-
 // PodInfo represents the object that we are providing network for.
 type PodInfo interface {
 	// InfraContainerID the CRI infra container for the pod namespace.
@@ -187,7 +176,6 @@ type podInfo struct {
 	KubernetesPodInfo
 	PodInfraContainerID string
 	PodInterfaceID      string
-	Version             podInfoScheme
 }
 
 func (p podInfo) String() string {
@@ -219,10 +207,7 @@ func (p *podInfo) InterfaceID() string {
 // composed of the CNI interfaceID, which is generated from the CRI infra
 // container ID and the pod net ns primary interface name.
 func (p *podInfo) Key() string {
-	if p.Version == InterfaceIDPodInfoScheme {
-		return p.PodInterfaceID
-	}
-	return p.PodName + ":" + p.PodNamespace
+	return p.PodInterfaceID
 }
 
 func (p *podInfo) Name() string {
@@ -251,7 +236,6 @@ func NewPodInfo(infraContainerID, interfaceID, name, namespace string) PodInfo {
 		},
 		PodInfraContainerID: infraContainerID,
 		PodInterfaceID:      interfaceID,
-		Version:             GlobalPodInfoScheme,
 	}
 }
 
@@ -262,7 +246,6 @@ func UnmarshalPodInfo(b []byte) (PodInfo, error) {
 	if err := json.Unmarshal(b, p); err != nil {
 		return nil, err
 	}
-	p.Version = GlobalPodInfoScheme
 	return p, nil
 }
 
@@ -273,7 +256,7 @@ func NewPodInfoFromIPConfigsRequest(req IPConfigsRequest) (PodInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	if GlobalPodInfoScheme == InterfaceIDPodInfoScheme && req.PodInterfaceID == "" {
+	if req.PodInterfaceID == "" {
 		return nil, fmt.Errorf("need interfaceID for pod info but request was empty")
 	}
 	p.(*podInfo).PodInfraContainerID = req.InfraContainerID

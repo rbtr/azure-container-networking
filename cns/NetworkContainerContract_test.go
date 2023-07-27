@@ -57,8 +57,6 @@ func TestUnmarshalPodInfo(t *testing.T) {
 }
 
 func TestNewPodInfoFromIPConfigsRequest(t *testing.T) {
-	GlobalPodInfoScheme = InterfaceIDPodInfoScheme
-	defer func() { GlobalPodInfoScheme = KubernetesPodInfoScheme }()
 	tests := []struct {
 		name    string
 		req     IPConfigsRequest
@@ -79,7 +77,6 @@ func TestNewPodInfoFromIPConfigsRequest(t *testing.T) {
 				},
 				PodInterfaceID:      "abcdef-eth0",
 				PodInfraContainerID: "abcdef",
-				Version:             InterfaceIDPodInfoScheme,
 			},
 		},
 		{
