@@ -1,4 +1,4 @@
-package cnireconciler
+package podprovider
 
 import (
 	"net"
