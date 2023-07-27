@@ -1,4 +1,4 @@
-package podprovider
+package cni
 
 import (
 	"os"

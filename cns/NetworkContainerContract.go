@@ -143,8 +143,6 @@ func (f PodInfoByIPProviderFunc) PodInfoByIP() (map[string]PodInfo, error) {
 	return f()
 }
 
-var GlobalPodInfoScheme podInfoScheme
-
 // podInfoScheme indicates which schema should be used when generating
 // the map key in the Key() function on a podInfo object.
 type podInfoScheme int
@@ -153,6 +151,8 @@ const (
 	KubernetesPodInfoScheme podInfoScheme = iota
 	InterfaceIDPodInfoScheme
 )
+
+var GlobalPodInfoScheme podInfoScheme = InterfaceIDPodInfoScheme
 
 // PodInfo represents the object that we are providing network for.
 type PodInfo interface {

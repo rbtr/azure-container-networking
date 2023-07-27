@@ -38,7 +38,8 @@ import (
 	"github.com/Azure/azure-container-networking/cns/logger"
 	"github.com/Azure/azure-container-networking/cns/multitenantcontroller"
 	"github.com/Azure/azure-container-networking/cns/multitenantcontroller/multitenantoperator"
-	cnireconciler "github.com/Azure/azure-container-networking/cns/podprovider"
+	cnireconciler "github.com/Azure/azure-container-networking/cns/podprovider/cni"
+	cnsreconciler "github.com/Azure/azure-container-networking/cns/podprovider/cns"
 	"github.com/Azure/azure-container-networking/cns/restserver"
 	cnstypes "github.com/Azure/azure-container-networking/cns/types"
 	"github.com/Azure/azure-container-networking/cns/wireserver"
@@ -746,39 +747,13 @@ func main() {
 	// State must be initialized before we start HTTPRestService
 	if config.ChannelMode == cns.CRD {
 		// Check the CNI statefile mount, and if the file is empty
-		// stub an empty JSON object
+		// stub an empty JSON object. Always attempt this since older
+		// CNIs will fail if we have mounted (which creates) an empty
+		// file.
 		if err := cnireconciler.WriteObjectToCNIStatefile(); err != nil {
 			logger.Errorf("Failed to write empty object to CNI state: %v", err)
 			return
 		}
-
-		// We might be configured to reinitialize state from the CNI instead of the apiserver.
-		// If so, we should check that the the CNI is new enough to support the state commands,
-		// otherwise we fall back to the existing behavior.
-		if cnsconfig.InitializeFromCNI {
-			var isGoodVer bool
-			isGoodVer, err = cnireconciler.IsDumpStateVer()
-			if err != nil {
-				logger.Errorf("error checking CNI ver: %v", err)
-			}
-
-			// override the prior config flag with the result of the ver check.
-			cnsconfig.InitializeFromCNI = isGoodVer
-
-			if cnsconfig.InitializeFromCNI {
-				// Set the PodInfoVersion by initialization type, so that the
-				// PodInfo maps use the correct key schema
-				cns.GlobalPodInfoScheme = cns.InterfaceIDPodInfoScheme
-			}
-		}
-		// If cns manageendpointstate is true, then cns maintains its own state and reconciles from it.
-		// in this case, cns maintains state with containerid as key and so in-memory cache can lookup
-		// and update based on container id.
-		if cnsconfig.ManageEndpointState {
-			cns.GlobalPodInfoScheme = cns.InterfaceIDPodInfoScheme
-		}
-
-		logger.Printf("Set GlobalPodInfoScheme %v (InitializeFromCNI=%t)", cns.GlobalPodInfoScheme, cnsconfig.InitializeFromCNI)
 
 		err = InitializeCRDState(rootCtx, httpRestService, cnsconfig)
 		if err != nil {
@@ -1165,7 +1140,7 @@ func InitializeCRDState(ctx context.Context, httpRestService cns.HTTPService, cn
 	switch {
 	case cnsconfig.ManageEndpointState:
 		logger.Printf("Initializing from self managed endpoint store")
-		podInfoByIPProvider, err = cnireconciler.NewCNSPodInfoProvider(httpRestServiceImplementation.EndpointStateStore) // get reference to endpoint state store from rest server
+		podInfoByIPProvider, err = cnsreconciler.NewCNSPodInfoProvider(httpRestServiceImplementation.EndpointStateStore) // get reference to endpoint state store from rest server
 		if err != nil {
 			if errors.Is(err, store.ErrKeyNotFound) {
 				logger.Printf("[Azure CNS] No endpoint state found, skipping initializing CNS state")
@@ -1173,27 +1148,12 @@ func InitializeCRDState(ctx context.Context, httpRestService cns.HTTPService, cn
 				return errors.Wrap(err, "failed to create CNS PodInfoProvider")
 			}
 		}
-	case cnsconfig.InitializeFromCNI:
+	default:
 		logger.Printf("Initializing from CNI")
 		podInfoByIPProvider, err = cnireconciler.NewCNIPodInfoProvider()
 		if err != nil {
 			return errors.Wrap(err, "failed to create CNI PodInfoProvider")
 		}
-	default:
-		logger.Printf("Initializing from Kubernetes")
-		podInfoByIPProvider = cns.PodInfoByIPProviderFunc(func() (map[string]cns.PodInfo, error) {
-			pods, err := clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{ //nolint:govet // ignore err shadow
-				FieldSelector: "spec.nodeName=" + nodeName,
-			})
-			if err != nil {
-				return nil, errors.Wrap(err, "failed to list Pods for PodInfoProvider")
-			}
-			podInfo, err := cns.KubePodsToPodInfoByIP(pods.Items)
-			if err != nil {
-				return nil, errors.Wrap(err, "failed to convert Pods to PodInfoByIP")
-			}
-			return podInfo, nil
-		})
 	}
 	// create scoped kube clients.
 	directcli, err := client.New(kubeConfig, client.Options{Scheme: nodenetworkconfig.Scheme})
