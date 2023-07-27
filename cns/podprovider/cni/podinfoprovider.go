@@ -7,16 +7,16 @@ import (
 	"github.com/Azure/azure-container-networking/cni/client"
 	"github.com/Azure/azure-container-networking/cns"
 	"github.com/pkg/errors"
-	"k8s.io/utils/exec"
+	kexec "k8s.io/utils/exec"
 )
 
 // NewCNIPodInfoProvider returns an implementation of cns.PodInfoByIPProvider
 // that execs out to the CNI and uses the response to build the PodInfo map.
 func NewCNIPodInfoProvider() (cns.PodInfoByIPProvider, error) {
-	return newCNIPodInfoProvider(exec.New())
+	return newCNIPodInfoProvider(kexec.New())
 }
 
-func newCNIPodInfoProvider(exec exec.Interface) (cns.PodInfoByIPProvider, error) {
+func newCNIPodInfoProvider(exec kexec.Interface) (cns.PodInfoByIPProvider, error) {
 	cli := client.New(exec)
 	state, err := cli.GetEndpointState()
 	if err != nil {
