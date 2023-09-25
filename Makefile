@@ -247,6 +247,7 @@ endif
 
 ## Image name definitions.
 ACNCLI_IMAGE     	  = acncli
+BASE_IMAGE            = base
 CNI_DROPGZ_IMAGE 	  = cni-dropgz
 CNI_DROPGZ_TEST_IMAGE = cni-dropgz-test
 CNS_IMAGE        	  = azure-cns
@@ -254,6 +255,7 @@ NPM_IMAGE        	  = azure-npm
 
 ## Image platform tags.
 ACNCLI_PLATFORM_TAG    		 ?= $(subst /,-,$(PLATFORM))$(if $(OS_VERSION),-$(OS_VERSION),)-$(ACN_VERSION)
+BASE_PLATFORM_TAG            ?= $(subst /,-,$(PLATFORM))$(if $(OS_VERSION),-$(OS_VERSION),)-$(REVISION)
 CNI_DROPGZ_PLATFORM_TAG 	 ?= $(subst /,-,$(PLATFORM))$(if $(OS_VERSION),-$(OS_VERSION),)-$(CNI_DROPGZ_VERSION)
 CNI_DROPGZ_TEST_PLATFORM_TAG ?= $(subst /,-,$(PLATFORM))$(if $(OS_VERSION),-$(OS_VERSION),)-$(CNI_DROPGZ_TEST_VERSION)
 CNS_PLATFORM_TAG        	 ?= $(subst /,-,$(PLATFORM))$(if $(OS_VERSION),-$(OS_VERSION),)-$(CNS_VERSION)
@@ -329,6 +331,35 @@ acncli-image-pull: ## pull cni-manager container image.
 	$(MAKE) container-pull \
 		IMAGE=$(ACNCLI_IMAGE) \
 		TAG=$(ACNCLI_PLATFORM_TAG)
+
+# base
+
+base-image-name: # util target to print the base image name.
+	@echo $(BASE_IMAGE)
+
+base-image-name-and-tag: # util target to print the base image name and tag.
+	@echo $(IMAGE_REGISTRY)/$(BASE_IMAGE):$(ACN_VERSION)
+
+base-image: ## build base container image.
+	$(MAKE) container \
+		DOCKERFILE=build/baseimages/$(OS)/Dockerfile \
+		IMAGE=$(BASE_IMAGE) \
+		EXTRA_BUILD_ARGS='--build-arg OS_VERSION=$(OS_VERSION)' \
+		PLATFORM=$(PLATFORM) \
+		TAG=$(BASE_PLATFORM_TAG) \
+		OS=$(OS) \
+		ARCH=$(ARCH) \
+		OS_VERSION=$(OS_VERSION)
+
+base-image-push: ## push base container image.
+	$(MAKE) container-push \
+		IMAGE=$(BASE_IMAGE) \
+		TAG=$(BASE_PLATFORM_TAG)
+
+base-image-pull: ## pull base container image.
+	$(MAKE) container-pull \
+		IMAGE=$(BASE_IMAGE) \
+		TAG=$(BASE_PLATFORM_TAG)
 
 # cni-dropgz
 
@@ -493,8 +524,6 @@ manifest-build: # util target to compose multiarch container manifests from plat
 		)\
 	)\
 
-
-
 manifest-push: # util target to push multiarch container manifest.
 	$(CONTAINER_BUILDER) manifest push --all $(IMAGE_REGISTRY)/$(IMAGE):$(TAG) docker://$(IMAGE_REGISTRY)/$(IMAGE):$(TAG)
 
@@ -517,6 +546,18 @@ acncli-manifest-push: ## push acncli multiplat container manifest
 acncli-skopeo-archive: ## export tar archive of acncli multiplat container manifest.
 	$(MAKE) manifest-skopeo-archive \
 		IMAGE=$(ACNCLI_IMAGE) \
+		TAG=$(ACN_VERSION)
+
+base-manifest-build: ## build base multiplat container manifest.
+	$(MAKE) manifest-build \
+		PLATFORMS="$(PLATFORMS)" \
+		IMAGE=$(BASE_IMAGE) \
+		TAG=$(ACN_VERSION) \
+		OS_VERSIONS="$(OS_VERSIONS)"
+
+base-manifest-push: ## push base multiplat container manifest
+	$(MAKE) manifest-push \
+		IMAGE=$(BASE_IMAGE) \
 		TAG=$(ACN_VERSION)
 
 cni-dropgz-manifest-build: ## build cni-dropgz multiplat container manifest.
