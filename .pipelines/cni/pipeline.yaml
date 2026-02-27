@@ -222,6 +222,67 @@ stages:
       scaleup: ${SCALEUP_WIN}
       iterations: ${ITERATIONS_WIN}
       upgradeScenario: false
+      enforceRequiredStateMatrix: true
+
+  - template: singletenancy/cniv2-template.yaml
+    parameters:
+      name: windows_podsubnet_m1
+      clusterType: swift-byocni-up
+      clusterName: w22-podsub-m1
+      nodeCount: ${NODE_COUNT_WINCLUSTER_SYSTEMPOOL}
+      nodeCountWin: ${NODE_COUNT_WIN}
+      vmSize: ${VM_SIZE_WINCLUSTER_SYSTEMPOOL}
+      vmSizeWin: ${VM_SIZE_WIN}
+      arch: amd64
+      os: windows
+      os_version: 'ltsc2022'
+      osSkuWin: 'Windows2022'
+      scaleup: ${SCALEUP_WIN}
+      iterations: ${ITERATIONS_WIN}
+      upgradeScenario: false
+      stateValidationMode: migration-enabled
+      enforceRequiredStateMatrix: true
+
+  - template: singletenancy/cniv2-template.yaml
+    parameters:
+      name: windows_podsubnet_m2
+      clusterType: swift-byocni-up
+      clusterName: w22-podsub-m2
+      nodeCount: ${NODE_COUNT_WINCLUSTER_SYSTEMPOOL}
+      nodeCountWin: ${NODE_COUNT_WIN}
+      vmSize: ${VM_SIZE_WINCLUSTER_SYSTEMPOOL}
+      vmSizeWin: ${VM_SIZE_WIN}
+      arch: amd64
+      os: windows
+      os_version: 'ltsc2022'
+      osSkuWin: 'Windows2022'
+      scaleup: ${SCALEUP_WIN}
+      iterations: ${ITERATIONS_WIN}
+      upgradeScenario: false
+      stateValidationMode: migration-enabled-second-start
+      enforceRequiredStateMatrix: true
+
+  - template: singletenancy/cniv2-template.yaml
+    parameters:
+      name: windows_podsubnet_m3
+      clusterType: swift-byocni-up
+      clusterName: w22-podsub-m1
+      nodeCount: ${NODE_COUNT_WINCLUSTER_SYSTEMPOOL}
+      nodeCountWin: ${NODE_COUNT_WIN}
+      vmSize: ${VM_SIZE_WINCLUSTER_SYSTEMPOOL}
+      vmSizeWin: ${VM_SIZE_WIN}
+      arch: amd64
+      os: windows
+      os_version: 'ltsc2022'
+      osSkuWin: 'Windows2022'
+      scaleup: ${SCALEUP_WIN}
+      iterations: ${ITERATIONS_WIN}
+      upgradeScenario: true
+      dependsOn: windows_podsubnet_m1_HNS
+      stateValidationMode: rollback-disabled
+      enforceRequiredStateMatrix: true
+      externalBaselineArtifactName: validate-baseline-windows_podsubnet_m1-windows
+      externalHNSBaselineArtifactName: validate-baseline-windows_podsubnet_m1-hns-windows
 
   - template: singletenancy/cniv2-template.yaml
     parameters:
@@ -239,8 +300,81 @@ stages:
       scaleup: ${SCALEUP_WIN}
       iterations: ${ITERATIONS_WIN}
       upgradeScenario: false
+      enforceRequiredStateMatrix: true
+
+  - template: singletenancy/cniv2-template.yaml
+    parameters:
+      name: windows_overlay_m1
+      clusterType: overlay-byocni-up
+      clusterName: w22-over-m1
+      nodeCount: ${NODE_COUNT_WINCLUSTER_SYSTEMPOOL}
+      nodeCountWin: ${NODE_COUNT_WIN}
+      vmSize: ${VM_SIZE_WINCLUSTER_SYSTEMPOOL}
+      vmSizeWin: ${VM_SIZE_WIN}
+      arch: amd64
+      os: windows
+      os_version: 'ltsc2022'
+      osSkuWin: 'Windows2022'
+      scaleup: ${SCALEUP_WIN}
+      iterations: ${ITERATIONS_WIN}
+      upgradeScenario: false
+      stateValidationMode: migration-enabled
+      enforceRequiredStateMatrix: true
+
+  - template: singletenancy/cniv2-template.yaml
+    parameters:
+      name: windows_overlay_m2
+      clusterType: overlay-byocni-up
+      clusterName: w22-over-m2
+      nodeCount: ${NODE_COUNT_WINCLUSTER_SYSTEMPOOL}
+      nodeCountWin: ${NODE_COUNT_WIN}
+      vmSize: ${VM_SIZE_WINCLUSTER_SYSTEMPOOL}
+      vmSizeWin: ${VM_SIZE_WIN}
+      arch: amd64
+      os: windows
+      os_version: 'ltsc2022'
+      osSkuWin: 'Windows2022'
+      scaleup: ${SCALEUP_WIN}
+      iterations: ${ITERATIONS_WIN}
+      upgradeScenario: false
+      stateValidationMode: migration-enabled-second-start
+      enforceRequiredStateMatrix: true
+
+  - template: singletenancy/cniv2-template.yaml
+    parameters:
+      name: windows_overlay_m3
+      clusterType: overlay-byocni-up
+      clusterName: w22-over-m1
+      nodeCount: ${NODE_COUNT_WINCLUSTER_SYSTEMPOOL}
+      nodeCountWin: ${NODE_COUNT_WIN}
+      vmSize: ${VM_SIZE_WINCLUSTER_SYSTEMPOOL}
+      vmSizeWin: ${VM_SIZE_WIN}
+      arch: amd64
+      os: windows
+      os_version: 'ltsc2022'
+      osSkuWin: 'Windows2022'
+      scaleup: ${SCALEUP_WIN}
+      iterations: ${ITERATIONS_WIN}
+      upgradeScenario: true
+      dependsOn: windows_overlay_m1_HNS
+      stateValidationMode: rollback-disabled
+      enforceRequiredStateMatrix: true
+      externalBaselineArtifactName: validate-baseline-windows_overlay_m1-windows
+      externalHNSBaselineArtifactName: validate-baseline-windows_overlay_m1-hns-windows
 
 ## Linux E2E
+  # Required merge-readiness matrix for CNS state migration rollout confidence:
+  # - Modes:       M0=json-baseline, M1=migration-enabled, M2=migration-enabled-second-start, M3=rollback-disabled
+  # - Disruptions: F1=restartCNS, F2=restartNode, F3=restartCNSDuringScale
+  # - Topologies:  T0=linux_podsubnet, T1=linux_overlay
+  #
+  # Required cells before runtime refactor merge:
+  #   (M0,M1,M2,M3) x (F1,F2,F3) x (T0,T1)
+  #
+  # Enforcement notes:
+  # - enforceRequiredStateMatrix=true is enabled on required T0/T1 lanes.
+  # - requiredStateScenarios is enforced by cniv2-template state_matrix_guard.
+  # - Windows lanes below provide additional confidence coverage but are not part of the minimum required gate.
   - template: singletenancy/cniv1-template.yaml
     parameters:
       name: linux_cniv1
@@ -264,6 +398,51 @@ stages:
       scaleup: ${SCALEUP_LINUX}
       iterations: ${ITERATIONS_LINUX}
       upgradeScenario: false
+      enforceRequiredStateMatrix: true
+
+  - template: singletenancy/cniv2-template.yaml
+    parameters:
+      name: linux_podsubnet_m1
+      clusterType: swift-byocni-up
+      clusterName: "linux-podsub-m1"
+      nodeCount: ${NODE_COUNT_LINUX}
+      vmSize: ${VM_SIZE}
+      arch: amd64
+      scaleup: ${SCALEUP_LINUX}
+      iterations: ${ITERATIONS_LINUX}
+      upgradeScenario: false
+      stateValidationMode: migration-enabled
+      enforceRequiredStateMatrix: true
+
+  - template: singletenancy/cniv2-template.yaml
+    parameters:
+      name: linux_podsubnet_m2
+      clusterType: swift-byocni-up
+      clusterName: "linux-podsub-m2"
+      nodeCount: ${NODE_COUNT_LINUX}
+      vmSize: ${VM_SIZE}
+      arch: amd64
+      scaleup: ${SCALEUP_LINUX}
+      iterations: ${ITERATIONS_LINUX}
+      upgradeScenario: false
+      stateValidationMode: migration-enabled-second-start
+      enforceRequiredStateMatrix: true
+
+  - template: singletenancy/cniv2-template.yaml
+    parameters:
+      name: linux_podsubnet_m3
+      clusterType: swift-byocni-up
+      clusterName: "linux-podsub-m1"
+      nodeCount: ${NODE_COUNT_LINUX}
+      vmSize: ${VM_SIZE}
+      arch: amd64
+      scaleup: ${SCALEUP_LINUX}
+      iterations: ${ITERATIONS_LINUX}
+      upgradeScenario: true
+      dependsOn: linux_podsubnet_m1
+      stateValidationMode: rollback-disabled
+      enforceRequiredStateMatrix: true
+      externalBaselineArtifactName: validate-baseline-linux_podsubnet_m1-linux
 
   - template: singletenancy/cniv2-template.yaml
     parameters:
@@ -276,6 +455,51 @@ stages:
       scaleup: ${SCALEUP_LINUX}
       iterations: ${ITERATIONS_LINUX}
       upgradeScenario: false
+      enforceRequiredStateMatrix: true
+
+  - template: singletenancy/cniv2-template.yaml
+    parameters:
+      name: linux_overlay_m1
+      clusterType: overlay-byocni-up
+      clusterName: "linux-over-m1"
+      nodeCount: ${NODE_COUNT_LINUX}
+      vmSize: ${VM_SIZE}
+      arch: amd64
+      scaleup: ${SCALEUP_LINUX}
+      iterations: ${ITERATIONS_LINUX}
+      upgradeScenario: false
+      stateValidationMode: migration-enabled
+      enforceRequiredStateMatrix: true
+
+  - template: singletenancy/cniv2-template.yaml
+    parameters:
+      name: linux_overlay_m2
+      clusterType: overlay-byocni-up
+      clusterName: "linux-over-m2"
+      nodeCount: ${NODE_COUNT_LINUX}
+      vmSize: ${VM_SIZE}
+      arch: amd64
+      scaleup: ${SCALEUP_LINUX}
+      iterations: ${ITERATIONS_LINUX}
+      upgradeScenario: false
+      stateValidationMode: migration-enabled-second-start
+      enforceRequiredStateMatrix: true
+
+  - template: singletenancy/cniv2-template.yaml
+    parameters:
+      name: linux_overlay_m3
+      clusterType: overlay-byocni-up
+      clusterName: "linux-over-m1"
+      nodeCount: ${NODE_COUNT_LINUX}
+      vmSize: ${VM_SIZE}
+      arch: amd64
+      scaleup: ${SCALEUP_LINUX}
+      iterations: ${ITERATIONS_LINUX}
+      upgradeScenario: true
+      dependsOn: linux_overlay_m1
+      stateValidationMode: rollback-disabled
+      enforceRequiredStateMatrix: true
+      externalBaselineArtifactName: validate-baseline-linux_overlay_m1-linux
 
   - template: singletenancy/cniv2-template.yaml
     parameters:

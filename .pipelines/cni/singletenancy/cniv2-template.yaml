@@ -13,6 +13,13 @@ parameters:
   osSKU: Ubuntu
   osSkuWin: Windows2022
   upgradeScenario: ""
+  stateValidationMode: "json-baseline"
+  enforceRequiredStateMatrix: false
+  requiredStateScenarios: "scaleTest restartNode restartCNS restartCNSDuringScale"
+  externalBaselineArtifactName: ""
+  externalHNSBaselineArtifactName: ""
+  externalBaselineSummaryFileName: "deploy-pods-summary.json"
+  externalHNSBaselineSummaryFileName: "hns-deploy-pods-summary.json"
 
 # CNIv2
 # + Should be able to scale up/down the pods successfully certain number of times.
@@ -127,8 +134,54 @@ stages:
       - setup
     displayName: "CNIv2 Test - ${{ parameters.name }}"
     jobs:
+      - job: state_matrix_guard
+        displayName: "State Matrix Guard - ${{ parameters.name }}"
+        condition: and( not(canceled()), ${{ parameters.enforceRequiredStateMatrix }} )
+        steps:
+          - script: |
+              set -euo pipefail
+
+              mode='${{ parameters.stateValidationMode }}'
+              case "$mode" in
+                json-baseline|migration-enabled|migration-enabled-second-start|rollback-disabled)
+                  ;;
+                *)
+                  echo "unsupported stateValidationMode: $mode"
+                  exit 1
+                  ;;
+              esac
+
+              required='${{ parameters.requiredStateScenarios }}'
+              control='$(CONTROL_SCENARIO)'
+
+              echo "State matrix guard: mode=$mode required_scenarios=$required control_scenario=$control"
+
+              if echo "$control" | tr '[:upper:]' '[:lower:]' | grep -q 'all'; then
+                echo "CONTROL_SCENARIO includes all; guard passed"
+                exit 0
+              fi
+
+              missing=0
+              controlLower=$(echo "$control" | tr '[:upper:]' '[:lower:]')
+              for scenario in $required; do
+                scenarioLower=$(echo "$scenario" | tr '[:upper:]' '[:lower:]')
+                if ! echo "$controlLower" | grep -q "$scenarioLower"; then
+                  echo "missing required scenario in CONTROL_SCENARIO: $scenario"
+                  missing=1
+                fi
+              done
+
+              if [ "$missing" -ne 0 ]; then
+                echo "state matrix guard failed"
+                exit 1
+              fi
+
+              echo "state matrix guard passed"
+            displayName: "Validate required state matrix inputs"
       - job: integration
         displayName: "Integration Test - ${{ parameters.name }}"
+        dependsOn: state_matrix_guard
+        condition: and( not(canceled()), in(dependencies.state_matrix_guard.result, 'Succeeded', 'Skipped') )
         steps:
           - ${{ if contains(parameters.clusterType, 'overlay') }}:
             - task: AzureCLI@2
@@ -252,6 +305,10 @@ stages:
         displayName: "Scale Test"
         dependsOn: npm_k8se2e
         steps:
+          - template: ../load-test-templates/set-cns-state-mode-template.yaml
+            parameters:
+              clusterName: ${{ parameters.clusterName }}-$(commitID)
+              mode: ${{ parameters.stateValidationMode }}
           - template: ../load-test-templates/pod-deployment-template.yaml
             parameters:
               clusterName: ${{ parameters.clusterName }}-$(commitID)
@@ -276,8 +333,12 @@ stages:
         dependsOn: deploy_pods
         timeoutInMinutes: 90 # Windows podsubnet takes an extended amount of time to reconcile
         steps:
-          - download: current
-            artifact: validate-baseline-${{ parameters.name }}-${{ parameters.os }}
+          - ${{ if ne(parameters.externalBaselineArtifactName, '') }}:
+            - download: current
+              artifact: ${{ parameters.externalBaselineArtifactName }}
+          - ${{ else }}:
+            - download: current
+              artifact: validate-baseline-${{ parameters.name }}-${{ parameters.os }}
           - template: ../load-test-templates/restart-node-template.yaml
             parameters:
               clusterName: ${{ parameters.clusterName }}-$(commitID)
@@ -294,14 +355,21 @@ stages:
               restartCase: "true"
               summaryFileName: restart-nodes-summary.json
               failOnRegression: "true"
-              baselineSummaryPath: $(Pipeline.Workspace)/validate-baseline-${{ parameters.name }}-${{ parameters.os }}/deploy-pods-summary.json
+              ${{ if ne(parameters.externalBaselineArtifactName, '') }}:
+                baselineSummaryPath: $(Pipeline.Workspace)/${{ parameters.externalBaselineArtifactName }}/${{ parameters.externalBaselineSummaryFileName }}
+              ${{ else }}:
+                baselineSummaryPath: $(Pipeline.Workspace)/validate-baseline-${{ parameters.name }}-${{ parameters.os }}/deploy-pods-summary.json
       - job: restart_cns_during_scale
         condition: and( and( not(canceled()), not(failed()) ), or( contains(variables.CONTROL_SCENARIO, 'restartCNSDuringScale') , contains(variables.CONTROL_SCENARIO, 'all') ) )
         displayName: "Restart CNS During Scale"
         dependsOn: restart_nodes
         steps:
-          - download: current
-            artifact: validate-baseline-${{ parameters.name }}-${{ parameters.os }}
+          - ${{ if ne(parameters.externalBaselineArtifactName, '') }}:
+            - download: current
+              artifact: ${{ parameters.externalBaselineArtifactName }}
+          - ${{ else }}:
+            - download: current
+              artifact: validate-baseline-${{ parameters.name }}-${{ parameters.os }}
           - template: ../load-test-templates/restart-cns-during-scale-template.yaml
             parameters:
               clusterName: ${{ parameters.clusterName }}-$(commitID)
@@ -319,14 +387,21 @@ stages:
               restartCase: "true"
               summaryFileName: restart-cns-during-scale-summary.json
               failOnRegression: "true"
-              baselineSummaryPath: $(Pipeline.Workspace)/validate-baseline-${{ parameters.name }}-${{ parameters.os }}/deploy-pods-summary.json
+              ${{ if ne(parameters.externalBaselineArtifactName, '') }}:
+                baselineSummaryPath: $(Pipeline.Workspace)/${{ parameters.externalBaselineArtifactName }}/${{ parameters.externalBaselineSummaryFileName }}
+              ${{ else }}:
+                baselineSummaryPath: $(Pipeline.Workspace)/validate-baseline-${{ parameters.name }}-${{ parameters.os }}/deploy-pods-summary.json
       - job: restart_cns
         condition: and( and( not(canceled()), not(failed()) ), or( contains(variables.CONTROL_SCENARIO, 'restartCNS') , contains(variables.CONTROL_SCENARIO, 'all') ) )
         displayName: "Restart and Validate CNS"
         dependsOn: restart_cns_during_scale
         steps:
-          - download: current
-            artifact: validate-baseline-${{ parameters.name }}-${{ parameters.os }}
+          - ${{ if ne(parameters.externalBaselineArtifactName, '') }}:
+            - download: current
+              artifact: ${{ parameters.externalBaselineArtifactName }}
+          - ${{ else }}:
+            - download: current
+              artifact: validate-baseline-${{ parameters.name }}-${{ parameters.os }}
           - template: ../load-test-templates/restart-cns-template.yaml
             parameters:
               clusterName: ${{ parameters.clusterName }}-$(commitID)
@@ -344,7 +419,10 @@ stages:
               restartCase: "true"
               summaryFileName: restart-cns-summary.json
               failOnRegression: "true"
-              baselineSummaryPath: $(Pipeline.Workspace)/validate-baseline-${{ parameters.name }}-${{ parameters.os }}/deploy-pods-summary.json
+              ${{ if ne(parameters.externalBaselineArtifactName, '') }}:
+                baselineSummaryPath: $(Pipeline.Workspace)/${{ parameters.externalBaselineArtifactName }}/${{ parameters.externalBaselineSummaryFileName }}
+              ${{ else }}:
+                baselineSummaryPath: $(Pipeline.Workspace)/validate-baseline-${{ parameters.name }}-${{ parameters.os }}/deploy-pods-summary.json
       - job: recover
         condition: and( not(canceled()), not(failed()) )
         displayName: "Recover Resources"
@@ -429,6 +507,10 @@ stages:
           displayName: "Scale Test"
           dependsOn: restart_hns
           steps:
+            - template: ../load-test-templates/set-cns-state-mode-template.yaml
+              parameters:
+                clusterName: ${{ parameters.clusterName }}-$(commitID)
+                mode: ${{ parameters.stateValidationMode }}
             - template: ../load-test-templates/pod-deployment-template.yaml
               parameters:
                 clusterName: ${{ parameters.clusterName }}-$(commitID)
@@ -449,8 +531,15 @@ stages:
           displayName: "Restart Test"
           dependsOn: deploy_pods
           steps:
-            - download: current
-              artifact: validate-baseline-${{ parameters.name }}-hns-${{ parameters.os }}
+            - ${{ if ne(parameters.externalHNSBaselineArtifactName, '') }}:
+              - download: current
+                artifact: ${{ parameters.externalHNSBaselineArtifactName }}
+            - ${{ elseif ne(parameters.externalBaselineArtifactName, '') }}:
+              - download: current
+                artifact: ${{ parameters.externalBaselineArtifactName }}
+            - ${{ else }}:
+              - download: current
+                artifact: validate-baseline-${{ parameters.name }}-hns-${{ parameters.os }}
             - template: ../load-test-templates/restart-node-template.yaml
               parameters:
                 clusterName: ${{ parameters.clusterName }}-$(commitID)
@@ -467,13 +556,25 @@ stages:
                 restartCase: "true"
                 summaryFileName: hns-restart-nodes-summary.json
                 failOnRegression: "true"
-                baselineSummaryPath: $(Pipeline.Workspace)/validate-baseline-${{ parameters.name }}-hns-${{ parameters.os }}/hns-deploy-pods-summary.json
+                ${{ if ne(parameters.externalHNSBaselineArtifactName, '') }}:
+                  baselineSummaryPath: $(Pipeline.Workspace)/${{ parameters.externalHNSBaselineArtifactName }}/${{ parameters.externalHNSBaselineSummaryFileName }}
+                ${{ elseif ne(parameters.externalBaselineArtifactName, '') }}:
+                  baselineSummaryPath: $(Pipeline.Workspace)/${{ parameters.externalBaselineArtifactName }}/${{ parameters.externalHNSBaselineSummaryFileName }}
+                ${{ else }}:
+                  baselineSummaryPath: $(Pipeline.Workspace)/validate-baseline-${{ parameters.name }}-hns-${{ parameters.os }}/hns-deploy-pods-summary.json
         - job: restart_cns_during_scale
           displayName: "Restart CNS During Scale"
           dependsOn: restart_nodes
           steps:
-            - download: current
-              artifact: validate-baseline-${{ parameters.name }}-hns-${{ parameters.os }}
+            - ${{ if ne(parameters.externalHNSBaselineArtifactName, '') }}:
+              - download: current
+                artifact: ${{ parameters.externalHNSBaselineArtifactName }}
+            - ${{ elseif ne(parameters.externalBaselineArtifactName, '') }}:
+              - download: current
+                artifact: ${{ parameters.externalBaselineArtifactName }}
+            - ${{ else }}:
+              - download: current
+                artifact: validate-baseline-${{ parameters.name }}-hns-${{ parameters.os }}
             - template: ../load-test-templates/restart-cns-during-scale-template.yaml
               parameters:
                 clusterName: ${{ parameters.clusterName }}-$(commitID)
@@ -490,13 +591,25 @@ stages:
                 restartCase: "true"
                 summaryFileName: hns-restart-cns-during-scale-summary.json
                 failOnRegression: "true"
-                baselineSummaryPath: $(Pipeline.Workspace)/validate-baseline-${{ parameters.name }}-hns-${{ parameters.os }}/hns-deploy-pods-summary.json
+                ${{ if ne(parameters.externalHNSBaselineArtifactName, '') }}:
+                  baselineSummaryPath: $(Pipeline.Workspace)/${{ parameters.externalHNSBaselineArtifactName }}/${{ parameters.externalHNSBaselineSummaryFileName }}
+                ${{ elseif ne(parameters.externalBaselineArtifactName, '') }}:
+                  baselineSummaryPath: $(Pipeline.Workspace)/${{ parameters.externalBaselineArtifactName }}/${{ parameters.externalHNSBaselineSummaryFileName }}
+                ${{ else }}:
+                  baselineSummaryPath: $(Pipeline.Workspace)/validate-baseline-${{ parameters.name }}-hns-${{ parameters.os }}/hns-deploy-pods-summary.json
         - job: restart_cns
           displayName: "Restart and Validate CNS"
           dependsOn: restart_cns_during_scale
           steps:
-            - download: current
-              artifact: validate-baseline-${{ parameters.name }}-hns-${{ parameters.os }}
+            - ${{ if ne(parameters.externalHNSBaselineArtifactName, '') }}:
+              - download: current
+                artifact: ${{ parameters.externalHNSBaselineArtifactName }}
+            - ${{ elseif ne(parameters.externalBaselineArtifactName, '') }}:
+              - download: current
+                artifact: ${{ parameters.externalBaselineArtifactName }}
+            - ${{ else }}:
+              - download: current
+                artifact: validate-baseline-${{ parameters.name }}-hns-${{ parameters.os }}
             - template: ../load-test-templates/restart-cns-template.yaml
               parameters:
                 clusterName: ${{ parameters.clusterName }}-$(commitID)
@@ -513,7 +626,12 @@ stages:
                 restartCase: "true"
                 summaryFileName: hns-restart-cns-summary.json
                 failOnRegression: "true"
-                baselineSummaryPath: $(Pipeline.Workspace)/validate-baseline-${{ parameters.name }}-hns-${{ parameters.os }}/hns-deploy-pods-summary.json
+                ${{ if ne(parameters.externalHNSBaselineArtifactName, '') }}:
+                  baselineSummaryPath: $(Pipeline.Workspace)/${{ parameters.externalHNSBaselineArtifactName }}/${{ parameters.externalHNSBaselineSummaryFileName }}
+                ${{ elseif ne(parameters.externalBaselineArtifactName, '') }}:
+                  baselineSummaryPath: $(Pipeline.Workspace)/${{ parameters.externalBaselineArtifactName }}/${{ parameters.externalHNSBaselineSummaryFileName }}
+                ${{ else }}:
+                  baselineSummaryPath: $(Pipeline.Workspace)/validate-baseline-${{ parameters.name }}-hns-${{ parameters.os }}/hns-deploy-pods-summary.json
         - job: recover
           condition: and( not(canceled()), not(failed()) )
           displayName: "Recover Resources"

@@ -1,0 +1,93 @@
+parameters:
+  clusterName: ""
+  mode: "json-baseline"
+
+steps:
+  - task: AzureCLI@2
+    inputs:
+      azureSubscription: $(BUILD_VALIDATIONS_SERVICE_CONNECTION)
+      scriptLocation: "inlineScript"
+      scriptType: "bash"
+      addSpnToEnvironment: true
+      inlineScript: |
+        set -euo pipefail
+        make -C ./hack/aks set-kubeconf AZCLI=az CLUSTER=${{ parameters.clusterName }}
+
+        case "${{ parameters.mode }}" in
+          json-baseline)
+            enableMigration=false
+            initializeFromCNI=true
+            manageEndpointState=false
+            secondStart=false
+            ;;
+          migration-enabled)
+            enableMigration=true
+            initializeFromCNI=true
+            manageEndpointState=false
+            secondStart=false
+            ;;
+          migration-enabled-second-start)
+            enableMigration=true
+            initializeFromCNI=true
+            manageEndpointState=false
+            secondStart=true
+            ;;
+          rollback-disabled)
+            enableMigration=false
+            initializeFromCNI=true
+            manageEndpointState=false
+            secondStart=false
+            ;;
+          *)
+            echo "unsupported CNS state validation mode: ${{ parameters.mode }}"
+            exit 1
+            ;;
+        esac
+
+        echo "Applying CNS state validation mode=${{ parameters.mode }} EnableStateMigration=${enableMigration} InitializeFromCNI=${initializeFromCNI} ManageEndpointState=${manageEndpointState}"
+
+        currentConfig=$(kubectl -n kube-system get configmap cns-config -o jsonpath='{.data.cns_config\.json}')
+        if [ -z "$currentConfig" ]; then
+          echo "cns-config data.cns_config.json is empty"
+          exit 1
+        fi
+
+        patchedConfig=$(echo "$currentConfig" | jq \
+          --argjson migration "$enableMigration" \
+          --argjson initializeFromCNI "$initializeFromCNI" \
+          --argjson manageEndpointState "$manageEndpointState" \
+          '.EnableStateMigration = $migration | .InitializeFromCNI = $initializeFromCNI | .ManageEndpointState = $manageEndpointState')
+        if [ -z "$patchedConfig" ]; then
+          echo "failed to patch cns config"
+          exit 1
+        fi
+
+        kubectl -n kube-system patch configmap cns-config --type merge -p "{\"data\":{\"cns_config.json\":$(jq -Rs . <<<"$patchedConfig")}}"
+
+        echo "Restart CNS daemonsets to pick up config"
+        if kubectl -n kube-system get ds azure-cns >/dev/null 2>&1; then
+          kubectl -n kube-system rollout restart ds azure-cns
+          kubectl -n kube-system rollout status ds azure-cns
+
+          if [ "$secondStart" = "true" ]; then
+            echo "Triggering second CNS start cycle for mode=${{ parameters.mode }}"
+            kubectl -n kube-system rollout restart ds azure-cns
+            kubectl -n kube-system rollout status ds azure-cns
+          fi
+        fi
+
+        if kubectl -n kube-system get ds azure-cns-win >/dev/null 2>&1; then
+          kubectl -n kube-system rollout restart ds azure-cns-win
+          kubectl -n kube-system rollout status ds azure-cns-win
+
+          if [ "$secondStart" = "true" ]; then
+            echo "Triggering second CNS Windows start cycle for mode=${{ parameters.mode }}"
+            kubectl -n kube-system rollout restart ds azure-cns-win
+            kubectl -n kube-system rollout status ds azure-cns-win
+          fi
+        fi
+
+        echo "Effective CNS config"
+        kubectl -n kube-system get configmap cns-config -o jsonpath='{.data.cns_config\.json}' | jq '{EnableStateMigration, ManageEndpointState, InitializeFromCNI}'
+    name: "SetCNSStateMode"
+    displayName: "Set CNS State Validation Mode"
