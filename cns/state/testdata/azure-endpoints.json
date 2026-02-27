@@ -1,0 +1,109 @@
+{
+    "Endpoints": {
+        "44e640acfd7fea8ab5b82adf9537ad94c2ffbf5855dcdc1907b00f47654a37f5": {
+            "PodName": "gatekeeper-controller-74df7bdb7-7c5l4",
+            "PodNamespace": "gatekeeper-system",
+            "IfnameToIPMap": {
+                "": {
+                    "IPv4": [
+                        {
+                            "IP": "192.168.0.109",
+                            "Mask": "//8AAA=="
+                        }
+                    ],
+                    "NICType": ""
+                }
+            }
+        },
+        "6c470ff8d1ebfde3669c116a1706bd80048224c77e64420212773bb36d45f8e1": {
+            "PodName": "microsoft-defender-collector-ds-h8vr7",
+            "PodNamespace": "kube-system",
+            "IfnameToIPMap": {
+                "": {
+                    "IPv4": [
+                        {
+                            "IP": "192.168.0.140",
+                            "Mask": "//8AAA=="
+                        }
+                    ],
+                    "NICType": ""
+                }
+            }
+        },
+        "7892edc6d1f919547f569dd33dd870dc4dd0a3705661f29dfe110bdc051cc826": {
+            "PodName": "gatekeeper-controller-74df7bdb7-v9sr4",
+            "PodNamespace": "gatekeeper-system",
+            "IfnameToIPMap": {
+                "": {
+                    "IPv4": [
+                        {
+                            "IP": "192.168.0.219",
+                            "Mask": "//8AAA=="
+                        }
+                    ],
+                    "NICType": ""
+                }
+            }
+        },
+        "881ae4978b814a1dead0157e041a4183dc81d5a2e4b4c1c8a5b56edacd649eb2": {
+            "PodName": "metrics-server-674b4b94b6-wjrrk",
+            "PodNamespace": "kube-system",
+            "IfnameToIPMap": {
+                "": {
+                    "IPv4": [
+                        {
+                            "IP": "192.168.0.12",
+                            "Mask": "//8AAA=="
+                        }
+                    ],
+                    "NICType": ""
+                }
+            }
+        },
+        "8e2101e967b20d64ef925a2f378df8f96e0d331b749abef4c0aabdec2ba07a3a": {
+            "PodName": "metrics-server-674b4b94b6-8dm9n",
+            "PodNamespace": "kube-system",
+            "IfnameToIPMap": {
+                "": {
+                    "IPv4": [
+                        {
+                            "IP": "192.168.0.248",
+                            "Mask": "//8AAA=="
+                        }
+                    ],
+                    "NICType": ""
+                }
+            }
+        },
+        "9f065d75170122b76ffcbfcc9a37ce8ad8ae93ca8dc0fe3cb7f7c4bb44e1155f": {
+            "PodName": "coredns-6d7b684fb5-d82sd",
+            "PodNamespace": "kube-system",
+            "IfnameToIPMap": {
+                "": {
+                    "IPv4": [
+                        {
+                            "IP": "192.168.0.102",
+                            "Mask": "//8AAA=="
+                        }
+                    ],
+                    "NICType": ""
+                }
+            }
+        },
+        "a01cd8286844c20592def6dba8d123a6eaf7cb0e80037d7401c6c972eb42587d": {
+            "PodName": "microsoft-defender-publisher-ds-w9dx4",
+            "PodNamespace": "kube-system",
+            "IfnameToIPMap": {
+                "": {
+                    "IPv4": [
+                        {
+                            "IP": "192.168.0.252",
+                            "Mask": "//8AAA=="
+                        }
+                    ],
+                    "NICType": ""
+                }
+            }
+        }
+    }
+}

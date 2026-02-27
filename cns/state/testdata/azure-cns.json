@@ -1,0 +1,1089 @@
+{
+    "ContainerNetworkService": {
+        "Location": "",
+        "NetworkType": "",
+        "OrchestratorType": "KubernetesCRD",
+        "NodeID": "",
+        "Initialized": false,
+        "ContainerIDByOrchestratorContext": null,
+        "ContainerStatus": {
+            "a2e19e42-4505-499f-87b4-9f235c03207f": {
+                "ID": "a2e19e42-4505-499f-87b4-9f235c03207f",
+                "VMVersion": "0",
+                "HostVersion": "0",
+                "CreateNetworkContainerRequest": {
+                    "HostPrimaryIP": "10.10.0.4",
+                    "Version": "0",
+                    "NetworkContainerType": "Docker",
+                    "NetworkContainerid": "a2e19e42-4505-499f-87b4-9f235c03207f",
+                    "PrimaryInterfaceIdentifier": "",
+                    "AuthorizationToken": "",
+                    "LocalIPConfiguration": {
+                        "IPSubnet": {
+                            "IPAddress": "",
+                            "PrefixLength": 0
+                        },
+                        "DNSServers": null,
+                        "GatewayIPAddress": "",
+                        "GatewayIPv6Address": ""
+                    },
+                    "OrchestratorContext": null,
+                    "IPConfiguration": {
+                        "IPSubnet": {
+                            "IPAddress": "192.168.0.0",
+                            "PrefixLength": 16
+                        },
+                        "DNSServers": null,
+                        "GatewayIPAddress": "",
+                        "GatewayIPv6Address": ""
+                    },
+                    "SecondaryIPConfigs": {
+                        "192.168.0.0": {
+                            "IPAddress": "192.168.0.0",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.1": {
+                            "IPAddress": "192.168.0.1",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.10": {
+                            "IPAddress": "192.168.0.10",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.100": {
+                            "IPAddress": "192.168.0.100",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.101": {
+                            "IPAddress": "192.168.0.101",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.102": {
+                            "IPAddress": "192.168.0.102",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.103": {
+                            "IPAddress": "192.168.0.103",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.104": {
+                            "IPAddress": "192.168.0.104",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.105": {
+                            "IPAddress": "192.168.0.105",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.106": {
+                            "IPAddress": "192.168.0.106",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.107": {
+                            "IPAddress": "192.168.0.107",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.108": {
+                            "IPAddress": "192.168.0.108",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.109": {
+                            "IPAddress": "192.168.0.109",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.11": {
+                            "IPAddress": "192.168.0.11",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.110": {
+                            "IPAddress": "192.168.0.110",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.111": {
+                            "IPAddress": "192.168.0.111",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.112": {
+                            "IPAddress": "192.168.0.112",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.113": {
+                            "IPAddress": "192.168.0.113",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.114": {
+                            "IPAddress": "192.168.0.114",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.115": {
+                            "IPAddress": "192.168.0.115",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.116": {
+                            "IPAddress": "192.168.0.116",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.117": {
+                            "IPAddress": "192.168.0.117",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.118": {
+                            "IPAddress": "192.168.0.118",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.119": {
+                            "IPAddress": "192.168.0.119",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.12": {
+                            "IPAddress": "192.168.0.12",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.120": {
+                            "IPAddress": "192.168.0.120",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.121": {
+                            "IPAddress": "192.168.0.121",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.122": {
+                            "IPAddress": "192.168.0.122",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.123": {
+                            "IPAddress": "192.168.0.123",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.124": {
+                            "IPAddress": "192.168.0.124",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.125": {
+                            "IPAddress": "192.168.0.125",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.126": {
+                            "IPAddress": "192.168.0.126",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.127": {
+                            "IPAddress": "192.168.0.127",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.128": {
+                            "IPAddress": "192.168.0.128",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.129": {
+                            "IPAddress": "192.168.0.129",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.13": {
+                            "IPAddress": "192.168.0.13",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.130": {
+                            "IPAddress": "192.168.0.130",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.131": {
+                            "IPAddress": "192.168.0.131",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.132": {
+                            "IPAddress": "192.168.0.132",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.133": {
+                            "IPAddress": "192.168.0.133",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.134": {
+                            "IPAddress": "192.168.0.134",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.135": {
+                            "IPAddress": "192.168.0.135",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.136": {
+                            "IPAddress": "192.168.0.136",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.137": {
+                            "IPAddress": "192.168.0.137",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.138": {
+                            "IPAddress": "192.168.0.138",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.139": {
+                            "IPAddress": "192.168.0.139",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.14": {
+                            "IPAddress": "192.168.0.14",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.140": {
+                            "IPAddress": "192.168.0.140",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.141": {
+                            "IPAddress": "192.168.0.141",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.142": {
+                            "IPAddress": "192.168.0.142",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.143": {
+                            "IPAddress": "192.168.0.143",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.144": {
+                            "IPAddress": "192.168.0.144",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.145": {
+                            "IPAddress": "192.168.0.145",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.146": {
+                            "IPAddress": "192.168.0.146",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.147": {
+                            "IPAddress": "192.168.0.147",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.148": {
+                            "IPAddress": "192.168.0.148",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.149": {
+                            "IPAddress": "192.168.0.149",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.15": {
+                            "IPAddress": "192.168.0.15",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.150": {
+                            "IPAddress": "192.168.0.150",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.151": {
+                            "IPAddress": "192.168.0.151",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.152": {
+                            "IPAddress": "192.168.0.152",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.153": {
+                            "IPAddress": "192.168.0.153",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.154": {
+                            "IPAddress": "192.168.0.154",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.155": {
+                            "IPAddress": "192.168.0.155",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.156": {
+                            "IPAddress": "192.168.0.156",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.157": {
+                            "IPAddress": "192.168.0.157",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.158": {
+                            "IPAddress": "192.168.0.158",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.159": {
+                            "IPAddress": "192.168.0.159",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.16": {
+                            "IPAddress": "192.168.0.16",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.160": {
+                            "IPAddress": "192.168.0.160",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.161": {
+                            "IPAddress": "192.168.0.161",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.162": {
+                            "IPAddress": "192.168.0.162",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.163": {
+                            "IPAddress": "192.168.0.163",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.164": {
+                            "IPAddress": "192.168.0.164",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.165": {
+                            "IPAddress": "192.168.0.165",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.166": {
+                            "IPAddress": "192.168.0.166",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.167": {
+                            "IPAddress": "192.168.0.167",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.168": {
+                            "IPAddress": "192.168.0.168",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.169": {
+                            "IPAddress": "192.168.0.169",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.17": {
+                            "IPAddress": "192.168.0.17",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.170": {
+                            "IPAddress": "192.168.0.170",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.171": {
+                            "IPAddress": "192.168.0.171",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.172": {
+                            "IPAddress": "192.168.0.172",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.173": {
+                            "IPAddress": "192.168.0.173",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.174": {
+                            "IPAddress": "192.168.0.174",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.175": {
+                            "IPAddress": "192.168.0.175",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.176": {
+                            "IPAddress": "192.168.0.176",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.177": {
+                            "IPAddress": "192.168.0.177",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.178": {
+                            "IPAddress": "192.168.0.178",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.179": {
+                            "IPAddress": "192.168.0.179",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.18": {
+                            "IPAddress": "192.168.0.18",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.180": {
+                            "IPAddress": "192.168.0.180",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.181": {
+                            "IPAddress": "192.168.0.181",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.182": {
+                            "IPAddress": "192.168.0.182",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.183": {
+                            "IPAddress": "192.168.0.183",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.184": {
+                            "IPAddress": "192.168.0.184",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.185": {
+                            "IPAddress": "192.168.0.185",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.186": {
+                            "IPAddress": "192.168.0.186",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.187": {
+                            "IPAddress": "192.168.0.187",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.188": {
+                            "IPAddress": "192.168.0.188",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.189": {
+                            "IPAddress": "192.168.0.189",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.19": {
+                            "IPAddress": "192.168.0.19",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.190": {
+                            "IPAddress": "192.168.0.190",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.191": {
+                            "IPAddress": "192.168.0.191",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.192": {
+                            "IPAddress": "192.168.0.192",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.193": {
+                            "IPAddress": "192.168.0.193",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.194": {
+                            "IPAddress": "192.168.0.194",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.195": {
+                            "IPAddress": "192.168.0.195",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.196": {
+                            "IPAddress": "192.168.0.196",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.197": {
+                            "IPAddress": "192.168.0.197",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.198": {
+                            "IPAddress": "192.168.0.198",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.199": {
+                            "IPAddress": "192.168.0.199",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.2": {
+                            "IPAddress": "192.168.0.2",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.20": {
+                            "IPAddress": "192.168.0.20",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.200": {
+                            "IPAddress": "192.168.0.200",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.201": {
+                            "IPAddress": "192.168.0.201",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.202": {
+                            "IPAddress": "192.168.0.202",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.203": {
+                            "IPAddress": "192.168.0.203",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.204": {
+                            "IPAddress": "192.168.0.204",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.205": {
+                            "IPAddress": "192.168.0.205",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.206": {
+                            "IPAddress": "192.168.0.206",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.207": {
+                            "IPAddress": "192.168.0.207",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.208": {
+                            "IPAddress": "192.168.0.208",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.209": {
+                            "IPAddress": "192.168.0.209",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.21": {
+                            "IPAddress": "192.168.0.21",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.210": {
+                            "IPAddress": "192.168.0.210",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.211": {
+                            "IPAddress": "192.168.0.211",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.212": {
+                            "IPAddress": "192.168.0.212",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.213": {
+                            "IPAddress": "192.168.0.213",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.214": {
+                            "IPAddress": "192.168.0.214",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.215": {
+                            "IPAddress": "192.168.0.215",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.216": {
+                            "IPAddress": "192.168.0.216",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.217": {
+                            "IPAddress": "192.168.0.217",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.218": {
+                            "IPAddress": "192.168.0.218",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.219": {
+                            "IPAddress": "192.168.0.219",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.22": {
+                            "IPAddress": "192.168.0.22",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.220": {
+                            "IPAddress": "192.168.0.220",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.221": {
+                            "IPAddress": "192.168.0.221",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.222": {
+                            "IPAddress": "192.168.0.222",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.223": {
+                            "IPAddress": "192.168.0.223",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.224": {
+                            "IPAddress": "192.168.0.224",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.225": {
+                            "IPAddress": "192.168.0.225",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.226": {
+                            "IPAddress": "192.168.0.226",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.227": {
+                            "IPAddress": "192.168.0.227",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.228": {
+                            "IPAddress": "192.168.0.228",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.229": {
+                            "IPAddress": "192.168.0.229",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.23": {
+                            "IPAddress": "192.168.0.23",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.230": {
+                            "IPAddress": "192.168.0.230",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.231": {
+                            "IPAddress": "192.168.0.231",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.232": {
+                            "IPAddress": "192.168.0.232",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.233": {
+                            "IPAddress": "192.168.0.233",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.234": {
+                            "IPAddress": "192.168.0.234",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.235": {
+                            "IPAddress": "192.168.0.235",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.236": {
+                            "IPAddress": "192.168.0.236",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.237": {
+                            "IPAddress": "192.168.0.237",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.238": {
+                            "IPAddress": "192.168.0.238",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.239": {
+                            "IPAddress": "192.168.0.239",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.24": {
+                            "IPAddress": "192.168.0.24",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.240": {
+                            "IPAddress": "192.168.0.240",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.241": {
+                            "IPAddress": "192.168.0.241",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.242": {
+                            "IPAddress": "192.168.0.242",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.243": {
+                            "IPAddress": "192.168.0.243",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.244": {
+                            "IPAddress": "192.168.0.244",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.245": {
+                            "IPAddress": "192.168.0.245",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.246": {
+                            "IPAddress": "192.168.0.246",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.247": {
+                            "IPAddress": "192.168.0.247",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.248": {
+                            "IPAddress": "192.168.0.248",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.249": {
+                            "IPAddress": "192.168.0.249",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.25": {
+                            "IPAddress": "192.168.0.25",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.250": {
+                            "IPAddress": "192.168.0.250",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.251": {
+                            "IPAddress": "192.168.0.251",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.252": {
+                            "IPAddress": "192.168.0.252",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.253": {
+                            "IPAddress": "192.168.0.253",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.254": {
+                            "IPAddress": "192.168.0.254",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.255": {
+                            "IPAddress": "192.168.0.255",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.26": {
+                            "IPAddress": "192.168.0.26",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.27": {
+                            "IPAddress": "192.168.0.27",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.28": {
+                            "IPAddress": "192.168.0.28",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.29": {
+                            "IPAddress": "192.168.0.29",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.3": {
+                            "IPAddress": "192.168.0.3",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.30": {
+                            "IPAddress": "192.168.0.30",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.31": {
+                            "IPAddress": "192.168.0.31",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.32": {
+                            "IPAddress": "192.168.0.32",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.33": {
+                            "IPAddress": "192.168.0.33",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.34": {
+                            "IPAddress": "192.168.0.34",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.35": {
+                            "IPAddress": "192.168.0.35",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.36": {
+                            "IPAddress": "192.168.0.36",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.37": {
+                            "IPAddress": "192.168.0.37",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.38": {
+                            "IPAddress": "192.168.0.38",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.39": {
+                            "IPAddress": "192.168.0.39",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.4": {
+                            "IPAddress": "192.168.0.4",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.40": {
+                            "IPAddress": "192.168.0.40",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.41": {
+                            "IPAddress": "192.168.0.41",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.42": {
+                            "IPAddress": "192.168.0.42",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.43": {
+                            "IPAddress": "192.168.0.43",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.44": {
+                            "IPAddress": "192.168.0.44",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.45": {
+                            "IPAddress": "192.168.0.45",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.46": {
+                            "IPAddress": "192.168.0.46",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.47": {
+                            "IPAddress": "192.168.0.47",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.48": {
+                            "IPAddress": "192.168.0.48",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.49": {
+                            "IPAddress": "192.168.0.49",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.5": {
+                            "IPAddress": "192.168.0.5",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.50": {
+                            "IPAddress": "192.168.0.50",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.51": {
+                            "IPAddress": "192.168.0.51",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.52": {
+                            "IPAddress": "192.168.0.52",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.53": {
+                            "IPAddress": "192.168.0.53",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.54": {
+                            "IPAddress": "192.168.0.54",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.55": {
+                            "IPAddress": "192.168.0.55",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.56": {
+                            "IPAddress": "192.168.0.56",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.57": {
+                            "IPAddress": "192.168.0.57",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.58": {
+                            "IPAddress": "192.168.0.58",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.59": {
+                            "IPAddress": "192.168.0.59",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.6": {
+                            "IPAddress": "192.168.0.6",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.60": {
+                            "IPAddress": "192.168.0.60",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.61": {
+                            "IPAddress": "192.168.0.61",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.62": {
+                            "IPAddress": "192.168.0.62",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.63": {
+                            "IPAddress": "192.168.0.63",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.64": {
+                            "IPAddress": "192.168.0.64",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.65": {
+                            "IPAddress": "192.168.0.65",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.66": {
+                            "IPAddress": "192.168.0.66",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.67": {
+                            "IPAddress": "192.168.0.67",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.68": {
+                            "IPAddress": "192.168.0.68",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.69": {
+                            "IPAddress": "192.168.0.69",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.7": {
+                            "IPAddress": "192.168.0.7",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.70": {
+                            "IPAddress": "192.168.0.70",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.71": {
+                            "IPAddress": "192.168.0.71",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.72": {
+                            "IPAddress": "192.168.0.72",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.73": {
+                            "IPAddress": "192.168.0.73",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.74": {
+                            "IPAddress": "192.168.0.74",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.75": {
+                            "IPAddress": "192.168.0.75",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.76": {
+                            "IPAddress": "192.168.0.76",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.77": {
+                            "IPAddress": "192.168.0.77",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.78": {
+                            "IPAddress": "192.168.0.78",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.79": {
+                            "IPAddress": "192.168.0.79",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.8": {
+                            "IPAddress": "192.168.0.8",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.80": {
+                            "IPAddress": "192.168.0.80",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.81": {
+                            "IPAddress": "192.168.0.81",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.82": {
+                            "IPAddress": "192.168.0.82",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.83": {
+                            "IPAddress": "192.168.0.83",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.84": {
+                            "IPAddress": "192.168.0.84",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.85": {
+                            "IPAddress": "192.168.0.85",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.86": {
+                            "IPAddress": "192.168.0.86",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.87": {
+                            "IPAddress": "192.168.0.87",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.88": {
+                            "IPAddress": "192.168.0.88",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.89": {
+                            "IPAddress": "192.168.0.89",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.9": {
+                            "IPAddress": "192.168.0.9",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.90": {
+                            "IPAddress": "192.168.0.90",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.91": {
+                            "IPAddress": "192.168.0.91",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.92": {
+                            "IPAddress": "192.168.0.92",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.93": {
+                            "IPAddress": "192.168.0.93",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.94": {
+                            "IPAddress": "192.168.0.94",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.95": {
+                            "IPAddress": "192.168.0.95",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.96": {
+                            "IPAddress": "192.168.0.96",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.97": {
+                            "IPAddress": "192.168.0.97",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.98": {
+                            "IPAddress": "192.168.0.98",
+                            "NCVersion": 0
+                        },
+                        "192.168.0.99": {
+                            "IPAddress": "192.168.0.99",
+                            "NCVersion": 0
+                        }
+                    },
+                    "MultiTenancyInfo": {
+                        "EncapType": "",
+                        "ID": 0
+                    },
+                    "CnetAddressSpace": null,
+                    "Routes": null,
+                    "AllowHostToNCCommunication": false,
+                    "AllowNCToHostCommunication": false,
+                    "SkipDefaultRoutes": false,
+                    "EndpointPolicies": null,
+                    "NCStatus": "",
+                    "NetworkInterfaceInfo": {
+                        "NICType": "",
+                        "MACAddress": ""
+                    }
+                },
+                "VfpUpdateComplete": false
+            }
+        },
+        "Networks": {},
+        "TimeStamp": "2026-02-24T11:00:24.910171869Z",
+        "PnpIDByMacAddress": {}
+    }
+}
