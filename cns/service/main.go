@@ -723,11 +723,12 @@ func main() {
 		return
 	}
 
-	// Create the key value store.
-	storeFileName := storeFileLocation + name + ".json"
-	config.Store, err = store.NewJsonFileStore(storeFileName, lockclient, nil)
+	// Create the key value store using the configured backend.
+	storeBasePath := storeFileLocation + name
+	logger.Printf("[Azure CNS] Creating %s store at %s", cnsconfig.StoreBackend, storeBasePath)
+	config.Store, err = store.NewStore(cnsconfig.StoreBackend, storeBasePath, lockclient, nil)
 	if err != nil {
-		logger.Errorf("Failed to create store file: %s, due to error %v\n", storeFileName, err)
+		logger.Errorf("Failed to create %s store at %s: %v\n", cnsconfig.StoreBackend, storeBasePath, err)
 		return
 	}
 
@@ -746,12 +747,12 @@ func main() {
 			logger.Errorf("Failed to create File Store directory %s, due to Error:%v", storeFileLocation, err.Error())
 			return
 		}
-		// Create the key value store.
-		storeFileName := endpointStorePath + endpointStoreName + ".json"
-		logger.Printf("EndpointStoreState path is %s", storeFileName)
-		endpointStateStore, err = store.NewJsonFileStore(storeFileName, endpointStoreLock, nil)
+		// Create the endpoint state store using the same backend.
+		endpointStoreBasePath := endpointStorePath + endpointStoreName
+		logger.Printf("EndpointStateStore: using %s backend at %s", cnsconfig.StoreBackend, endpointStoreBasePath)
+		endpointStateStore, err = store.NewStore(cnsconfig.StoreBackend, endpointStoreBasePath, endpointStoreLock, nil)
 		if err != nil {
-			logger.Errorf("Failed to create endpoint state store file: %s, due to error %v\n", storeFileName, err)
+			logger.Errorf("Failed to create endpoint state store at %s: %v\n", endpointStoreBasePath, err)
 			return
 		}
 	}

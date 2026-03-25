@@ -49,6 +49,9 @@ type CNSConfig struct {
 	MellanoxMonitorIntervalSecs int
 	MetricsBindAddress          string
 	ProgramSNATIPTables         bool
+	// StoreBackend selects the persistent store implementation.
+	// Valid values: "json" (default), "bbolt", "sqlite".
+	StoreBackend                string
 	SyncHostNCTimeoutMs         int
 	SyncHostNCVersionIntervalMs int
 	TLSCertificatePath          string
@@ -243,6 +246,9 @@ func SetCNSConfigDefaults(config *CNSConfig) {
 
 	if config.MinTLSVersion == "" {
 		config.MinTLSVersion = "TLS 1.2"
+	}
+	if config.StoreBackend == "" {
+		config.StoreBackend = "json"
 	}
 	// Validate IPv6PrefixClamp to avoid invalid prefix lengths reaching netip.PrefixFrom.
 	// If IPv6PrefixClamp less than 120, large amount of IPs will be generated which could lead to OOM.

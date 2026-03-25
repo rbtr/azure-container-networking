@@ -187,6 +187,8 @@ data:
       "ChannelMode": "CRD",
       "InitializeFromCNI": true,
       "ManageEndpointState": false,
-      "ProgramSNATIPTables" : false
+      "ProgramSNATIPTables" : false,
+      "StoreBackend": "json"
     }
 # Toggle ManageEndpointState and ProgramSNATIPTables to true for delegated IPAM use case.
+# StoreBackend options: "json" (default), "bbolt", "sqlite".
