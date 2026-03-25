@@ -1,0 +1,9 @@
+backend,scale,sku,run,wall_clock_ms,sli_count,sli_mean_s
+json,50,Standard_B2s,2,60888,50,48.6151
+json,50,Standard_B2s,3,91069,50,72.9939
+bbolt,50,Standard_B2s,1,81040,50,65.3665
+bbolt,50,Standard_B2s,2,80961,50,58.1796
+bbolt,50,Standard_B2s,3,80927,50,62.1857
+sqlite,50,Standard_B2s,1,101065,50,78.2384
+sqlite,50,Standard_B2s,2,91054,50,67.2213
+sqlite,50,Standard_B2s,3,91079,49,53.6212

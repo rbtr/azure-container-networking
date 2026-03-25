@@ -1,0 +1,322 @@
+{
+  "backend": "sqlite",
+  "scale": 50,
+  "sku": "Standard_D8ads_v7",
+  "run": 1,
+  "wall_clock_ms": 10426,
+  "pod_count": 50,
+  "p50": 5,
+  "p95": 6,
+  "p99": 6,
+  "max": 6,
+  "mean": 5.44,
+  "latencies": [
+    {
+      "name": "storebench-69f7bd8676-2htp2",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-2ljbc",
+      "latency_ms": 4000
+    },
+    {
+      "name": "storebench-69f7bd8676-2n2c9",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-6grs4",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-6qw2f",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-6rjpf",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-6zpv9",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-7ltm5",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-7m84r",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-8sp99",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-8t8kd",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-94d5v",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-b48df",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-ckxrw",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-d676g",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-d6glr",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-dblqd",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-dtm47",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-dzfn8",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-f29gv",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-ffxxp",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-g5m4f",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-g6dwz",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-gh7v8",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-grrcw",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-gtvpf",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-h6tdx",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-hp7lf",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-k2qzk",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-k72w6",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-kwh5x",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-m68fd",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-nrdzc",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-p5h4v",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-q444s",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-qltw8",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-r8nn7",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-rn5dw",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-skjxk",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-ssl75",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-t8bhl",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-tprmr",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-vc5s2",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-vnhlp",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-wjwg4",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-wvf2t",
+      "latency_ms": 5000
+    },
+    {
+      "name": "storebench-69f7bd8676-x86t5",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-xctxh",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-xjnf9",
+      "latency_ms": 6000
+    },
+    {
+      "name": "storebench-69f7bd8676-zqdjx",
+      "latency_ms": 5000
+    }
+  ],
+  "kubelet_sli": {
+    "sample_count": 50,
+    "sample_sum": 324.98545839899816,
+    "mean_seconds": 6.4997091679799635,
+    "buckets": [
+      {
+        "le": 0.5,
+        "count": 0
+      },
+      {
+        "le": 1,
+        "count": 0
+      },
+      {
+        "le": 2,
+        "count": 0
+      },
+      {
+        "le": 3,
+        "count": 0
+      },
+      {
+        "le": 4,
+        "count": 0
+      },
+      {
+        "le": 5,
+        "count": 1
+      },
+      {
+        "le": 6,
+        "count": 12
+      },
+      {
+        "le": 8,
+        "count": 50
+      },
+      {
+        "le": 10,
+        "count": 50
+      },
+      {
+        "le": 20,
+        "count": 50
+      },
+      {
+        "le": 30,
+        "count": 50
+      },
+      {
+        "le": 45,
+        "count": 50
+      },
+      {
+        "le": 60,
+        "count": 50
+      },
+      {
+        "le": 120,
+        "count": 50
+      },
+      {
+        "le": 180,
+        "count": 50
+      },
+      {
+        "le": 240,
+        "count": 50
+      },
+      {
+        "le": 300,
+        "count": 50
+      },
+      {
+        "le": 360,
+        "count": 50
+      },
+      {
+        "le": 480,
+        "count": 50
+      },
+      {
+        "le": 600,
+        "count": 50
+      },
+      {
+        "le": 900,
+        "count": 50
+      },
+      {
+        "le": 1200,
+        "count": 50
+      },
+      {
+        "le": 1800,
+        "count": 50
+      },
+      {
+        "le": 2700,
+        "count": 50
+      },
+      {
+        "le": 3600,
+        "count": 50
+      }
+    ]
+  }
+}

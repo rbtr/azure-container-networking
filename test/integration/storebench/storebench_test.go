@@ -32,6 +32,7 @@ import (
 	"github.com/Azure/azure-container-networking/test/internal/kubernetes"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -44,7 +45,7 @@ type config struct {
 	Backends string `env:"BACKENDS" default:"json bbolt sqlite"`
 	Scales   string `env:"SCALES"   default:"50 100 200"`
 	Runs     int    `env:"RUNS"     default:"3"`
-	OutDir   string `env:"OUTDIR"   default:"./storebench-results"`
+	OutDir   string `env:"OUTDIR"   default:"./results"`
 	Node     string `env:"NODE"     default:""`
 }
 
@@ -87,7 +88,7 @@ func TestStoreBench(t *testing.T) {
 
 	// Run matrix.
 	for _, backend := range backends {
-		switchBackend(ctx, t, clientset, backend)
+		switchBackend(ctx, t, clientset, backend, node)
 
 		for _, scale := range scales {
 			for run := 1; run <= cfg.Runs; run++ {
@@ -310,7 +311,7 @@ func scrapeKubeletSLI(ctx context.Context, t *testing.T, clientset *k8s.Clientse
 
 // parsePrometheusMetrics parses Prometheus exposition format text into MetricFamily map.
 func parsePrometheusMetrics(data []byte) (map[string]*dto.MetricFamily, error) {
-	parser := &expfmt.TextParser{}
+	parser := expfmt.NewTextParser(model.UTF8Validation)
 	return parser.TextToMetricFamilies(strings.NewReader(string(data)))
 }
 
@@ -343,10 +344,13 @@ func computeSLIDelta(t *testing.T, pre, post *dto.MetricFamily) *kubeletSLIResul
 		MeanSeconds: deltaSum / float64(deltaCount),
 	}
 
-	// Compute delta buckets.
+	// Compute delta buckets (skip +Inf which can't be JSON-marshaled).
 	preBuckets := bucketMap(preHist)
 	for _, b := range postHist.GetBucket() {
 		le := b.GetUpperBound()
+		if math.IsInf(le, 0) {
+			continue
+		}
 		preCount := preBuckets[le]
 		result.Buckets = append(result.Buckets, histogramBucket{
 			UpperBound:      le,
@@ -414,10 +418,11 @@ func bucketMap(h *dto.Histogram) map[float64]uint64 {
 // ConfigMap switching
 // ──────────────────────────────────────────────────────────────────
 
-func switchBackend(ctx context.Context, t *testing.T, clientset *k8s.Clientset, backend string) {
+func switchBackend(ctx context.Context, t *testing.T, clientset *k8s.Clientset, backend, node string) {
 	t.Helper()
 	t.Logf("Switching CNS store backend to: %s", backend)
 
+	// Update the ConfigMap with the new backend.
 	cm, err := clientset.CoreV1().ConfigMaps(cnsNamespace).Get(ctx, cnsConfigMap, metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("Failed to get ConfigMap %s: %v", cnsConfigMap, err)
@@ -441,11 +446,94 @@ func switchBackend(ctx context.Context, t *testing.T, clientset *k8s.Clientset, 
 		t.Fatalf("Failed to update ConfigMap: %v", err)
 	}
 
-	// Rolling restart of CNS DaemonSet.
+	// Wipe old store files from the node to prevent state leakage between backends.
+	cleanStoreState(ctx, t, clientset, node)
+
+	// Rolling restart of CNS DaemonSet (picks up new ConfigMap + clean state).
 	restartDaemonSet(ctx, t, clientset, cnsNamespace, "azure-cns")
 
 	t.Log("Waiting 30s for CNS to stabilize...")
 	time.Sleep(30 * time.Second)
+}
+
+// cleanStoreState removes CNS store files from the target node so each backend
+// starts with a clean slate. This prevents stale endpoint state from prior
+// backends or prior runs from skewing the benchmark.
+func cleanStoreState(ctx context.Context, t *testing.T, clientset *k8s.Clientset, node string) {
+	t.Helper()
+	t.Log("Cleaning CNS store state on node...")
+
+	podName := "storebench-cleanup"
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      podName,
+			Namespace: cnsNamespace,
+		},
+		Spec: corev1.PodSpec{
+			NodeSelector:  map[string]string{"kubernetes.io/hostname": node},
+			Tolerations:   []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
+			RestartPolicy: corev1.RestartPolicyNever,
+			HostNetwork:   true,
+			Containers: []corev1.Container{
+				{
+					Name:    "cleanup",
+					Image:   "busybox:1.36",
+					Command: []string{"/bin/sh", "-c", strings.Join([]string{
+						// Remove all store files (json, bbolt, sqlite) from both state dirs.
+						"rm -f /host/var/lib/azure-network/azure-cns.*",
+						"rm -f /host/var/lib/azure-network/*.db",
+						"rm -f /host/var/lib/azure-network/*.sqlite",
+						"rm -f /host/var/run/azure-cns/azure-endpoints.*",
+						"rm -f /host/var/run/azure-cns/*.db",
+						"rm -f /host/var/run/azure-cns/*.sqlite",
+						"echo done",
+					}, " && ")},
+					VolumeMounts: []corev1.VolumeMount{
+						{Name: "host-state", MountPath: "/host/var/lib/azure-network"},
+						{Name: "host-endpoints", MountPath: "/host/var/run/azure-cns"},
+					},
+				},
+			},
+			Volumes: []corev1.Volume{
+				{Name: "host-state", VolumeSource: corev1.VolumeSource{
+					HostPath: &corev1.HostPathVolumeSource{Path: "/var/lib/azure-network"},
+				}},
+				{Name: "host-endpoints", VolumeSource: corev1.VolumeSource{
+					HostPath: &corev1.HostPathVolumeSource{Path: "/var/run/azure-cns"},
+				}},
+			},
+			TerminationGracePeriodSeconds: int64ptr(0),
+		},
+	}
+
+	// Delete if leftover from a previous run.
+	_ = clientset.CoreV1().Pods(cnsNamespace).Delete(ctx, podName, metav1.DeleteOptions{})
+	time.Sleep(5 * time.Second)
+
+	_, err := clientset.CoreV1().Pods(cnsNamespace).Create(ctx, pod, metav1.CreateOptions{})
+	if err != nil {
+		t.Logf("WARNING: cleanup pod creation failed: %v", err)
+		return
+	}
+
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		p, err := clientset.CoreV1().Pods(cnsNamespace).Get(ctx, podName, metav1.GetOptions{})
+		if err != nil {
+			break
+		}
+		if p.Status.Phase == corev1.PodSucceeded || p.Status.Phase == corev1.PodFailed {
+			if p.Status.Phase == corev1.PodFailed {
+				t.Log("WARNING: cleanup pod failed")
+			} else {
+				t.Log("Store state cleaned")
+			}
+			break
+		}
+		time.Sleep(3 * time.Second)
+	}
+	_ = clientset.CoreV1().Pods(cnsNamespace).Delete(ctx, podName, metav1.DeleteOptions{})
+	time.Sleep(3 * time.Second)
 }
 
 func restartDaemonSet(ctx context.Context, t *testing.T, clientset *k8s.Clientset, ns, name string) {
@@ -602,12 +690,24 @@ func cleanNamespace(ctx context.Context, t *testing.T, clientset *k8s.Clientset)
 	if err != nil {
 		return // not found is fine
 	}
-	// Wait for namespace deletion.
-	deadline := time.Now().Add(2 * time.Minute)
+	// Wait for namespace deletion, force-finalize if stuck.
+	deadline := time.Now().Add(90 * time.Second)
+	forceFinalized := false
 	for time.Now().Before(deadline) {
-		_, err := clientset.CoreV1().Namespaces().Get(ctx, testNamespace, metav1.GetOptions{})
+		ns, err := clientset.CoreV1().Namespaces().Get(ctx, testNamespace, metav1.GetOptions{})
 		if err != nil {
 			return // deleted
+		}
+		// If the namespace has been Terminating for >30s and still has finalizers,
+		// force-remove them (common when metrics-server API is stale).
+		if !forceFinalized && time.Since(ns.DeletionTimestamp.Time) > 30*time.Second {
+			t.Log("Force-removing namespace finalizers...")
+			ns.Spec.Finalizers = nil
+			_, err := clientset.CoreV1().Namespaces().Finalize(ctx, ns, metav1.UpdateOptions{})
+			if err != nil {
+				t.Logf("  finalize failed: %v", err)
+			}
+			forceFinalized = true
 		}
 		time.Sleep(3 * time.Second)
 	}
