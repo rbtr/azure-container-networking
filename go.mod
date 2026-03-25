@@ -1,6 +1,6 @@
 module github.com/Azure/azure-container-networking
 
-go 1.24.1
+go 1.25.0
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.19.1
@@ -35,8 +35,8 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/zap v1.27.0
-	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
-	golang.org/x/sys v0.40.0
+	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546
+	golang.org/x/sys v0.42.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250825161204-c5933d9347a5 // indirect
 	google.golang.org/grpc v1.76.0
 	google.golang.org/protobuf v1.36.10
@@ -125,9 +125,11 @@ require (
 	github.com/cilium/cilium v1.16.17
 	github.com/cilium/ebpf v0.19.0
 	github.com/jsternberg/zap-logfmt v1.3.0
-	golang.org/x/sync v0.18.0
+	go.etcd.io/bbolt v1.4.3
+	golang.org/x/sync v0.19.0
 	gotest.tools/v3 v3.5.2
 	k8s.io/kubectl v0.34.1
+	modernc.org/sqlite v1.47.0
 	sigs.k8s.io/yaml v1.6.0
 )
 
@@ -138,6 +140,7 @@ require (
 	github.com/cilium/proxy v0.0.0-20250526114940-b80199397e8a // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/typeurl/v2 v2.2.0 // indirect
+	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/analysis v0.23.0 // indirect
@@ -155,9 +158,11 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mackerelio/go-osstat v0.2.5 // indirect
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
+	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b // indirect
 	github.com/petermattis/goid v0.0.0-20240813172612-4fcff4a6cae7 // indirect
+	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/sasha-s/go-deadlock v0.3.5 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
@@ -173,6 +178,9 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
+	modernc.org/libc v1.70.0 // indirect
+	modernc.org/mathutil v1.7.1 // indirect
+	modernc.org/memory v1.11.0 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 )
