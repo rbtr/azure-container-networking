@@ -625,6 +625,16 @@ func (plugin *NetPlugin) Add(args *cniSkel.CmdArgs) error {
 		}
 	}()
 
+	// Limit concurrent endpoint creation to reduce RTNL lock contention.
+	if nwCfg.MaxConcurrentEndpointCreation >= 0 {
+		sem := newEndpointSemaphore("", nwCfg.MaxConcurrentEndpointCreation)
+		release, semErr := sem.Acquire()
+		if semErr != nil {
+			return errors.Wrap(semErr, "endpoint semaphore")
+		}
+		defer release()
+	}
+
 	err = plugin.nm.EndpointCreate(cnsclient, epInfos)
 	if err != nil {
 		return errors.Wrap(err, "failed to create endpoint") // behavior can change if you don't assign to err prior to returning

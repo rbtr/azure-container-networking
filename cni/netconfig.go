@@ -80,6 +80,11 @@ type NetworkConfig struct {
 	RuntimeConfig                 RuntimeConfig   `json:"runtimeConfig,omitempty"`
 	WindowsSettings               WindowsSettings `json:"windowsSettings,omitempty"`
 	AdditionalArgs                []KVPair        `json:"AdditionalArgs,omitempty"`
+	// MaxConcurrentEndpointCreation limits the number of concurrent CNI endpoint
+	// creation operations on a host. Each endpoint creation involves kernel netlink
+	// operations that contend on the global RTNL lock. Limiting concurrency reduces
+	// tail latency during pod bursts. 0 = auto (runtime.NumCPU()), -1 = unlimited.
+	MaxConcurrentEndpointCreation int `json:"maxConcurrentEndpointCreation,omitempty"`
 }
 
 type WindowsSettings struct {
