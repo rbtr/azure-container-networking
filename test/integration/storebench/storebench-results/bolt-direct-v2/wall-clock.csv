@@ -1,0 +1,10 @@
+backend,scale,sku,run,wall_clock_ms,sli_count,sli_mean_s
+bolt,50,Standard_D8ads_v6,1,20174,49,10.6590
+bolt,50,Standard_D8ads_v6,2,20424,50,10.5702
+bolt,50,Standard_D8ads_v6,3,20193,50,10.5395
+bolt,100,Standard_D8ads_v6,1,30246,100,17.4513
+bolt,100,Standard_D8ads_v6,2,30251,99,17.0444
+bolt,100,Standard_D8ads_v6,3,30252,100,17.3914
+bolt,150,Standard_D8ads_v6,1,40286,150,23.1275
+bolt,150,Standard_D8ads_v6,2,40267,149,24.8116
+bolt,150,Standard_D8ads_v6,3,40275,150,22.7179

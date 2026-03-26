@@ -1,0 +1,3 @@
+backend,scale,sku,run,wall_clock_ms,sli_count,sli_mean_s
+bolt,50,Standard_D8ads_v6,1,20167,50,10.7665
+bolt,50,Standard_D8ads_v6,2,20171,50,10.8302
