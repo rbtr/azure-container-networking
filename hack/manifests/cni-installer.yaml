@@ -41,15 +41,15 @@ spec:
           effect: NoSchedule
       initContainers:
         - name: azure-cni
-          image: mcr.microsoft.com/containernetworking/azure-cni:v1.5.16
+          image: mcr.microsoft.com/containernetworking/azure-cni:v1.8.1-0
           imagePullPolicy: Always
           command: ["/dropgz"]
           args:
             - deploy
-            - azure-vnet
+            - azure-vnet-stateless
             - -o
             - /opt/cni/bin/azure-vnet
-            - azure-linux-swift.conflist
+            - azure-swift-overlay.conflist
             - -o
             - /etc/cni/net.d/10-azure.conflist
           volumeMounts:

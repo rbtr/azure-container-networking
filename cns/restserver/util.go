@@ -123,18 +123,17 @@ func (service *HTTPRestService) restoreState() {
 	logger.Printf("[Azure CNS]  Restored state, %+v\n", service.state)
 
 	if service.Options[acn.OptManageEndpointState] == true {
-		err := service.EndpointStateStore.Read(EndpointStoreKey, &service.EndpointState)
-		if err != nil {
-			if errors.Is(err, store.ErrKeyNotFound) {
-				// Nothing to restore.
-				logger.Printf("[Azure CNS]  No endpoint state to restore.\n")
-			} else {
-				logger.Errorf("[Azure CNS]  Failed to restore endpoint state, err:%v. Removing endpoints.json", err)
+		if service.endpointStore != nil {
+			eps, err := service.endpointStore.ListEndpoints(context.Background())
+			if err != nil {
+				logger.Errorf("[Azure CNS]  Failed to restore endpoint state from bolt, err:%v", err)
+				return
 			}
-			return
+			for containerID, rec := range eps {
+				service.EndpointState[containerID] = EndpointRecordToInfo(rec)
+			}
+			logger.Printf("[Azure CNS]  Restored %d endpoints from bolt store\n", len(eps))
 		}
-		logger.Printf("[Azure CNS]  Restored endpoint state, %+v\n", service.EndpointState)
-
 	}
 }
 

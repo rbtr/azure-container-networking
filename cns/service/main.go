@@ -49,6 +49,7 @@ import (
 	restserverv2 "github.com/Azure/azure-container-networking/cns/restserver/v2"
 	cnipodprovider "github.com/Azure/azure-container-networking/cns/stateprovider/cni"
 	cnspodprovider "github.com/Azure/azure-container-networking/cns/stateprovider/cns"
+	cnsstore "github.com/Azure/azure-container-networking/cns/store"
 	cnstypes "github.com/Azure/azure-container-networking/cns/types"
 	"github.com/Azure/azure-container-networking/cns/wireserver"
 	acn "github.com/Azure/azure-container-networking/common"
@@ -528,9 +529,9 @@ func main() {
 
 	// Initialize CNS.
 	var (
-		err                error
-		config             common.ServiceConfig
-		endpointStateStore store.KeyValueStore
+		err            error
+		config         common.ServiceConfig
+		endpointStore  *cnsstore.EndpointBoltStore
 	)
 
 	config.Version = version
@@ -735,25 +736,24 @@ func main() {
 	// Initialize endpoint state store if cns is managing endpoint state.
 	if cnsconfig.ManageEndpointState {
 		logger.Printf("[Azure CNS] Configured to manage endpoints state")
-		endpointStoreLock, err := processlock.NewFileLock(platform.CNILockPath + endpointStoreName + store.LockExtension) // nolint
-		if err != nil {
-			logger.Printf("Error initializing endpoint state file lock:%v", err)
-			return
-		}
-		defer endpointStoreLock.Unlock() // nolint
 
 		err = platform.CreateDirectory(endpointStorePath)
 		if err != nil {
 			logger.Errorf("Failed to create File Store directory %s, due to Error:%v", storeFileLocation, err.Error())
 			return
 		}
-		// Create the endpoint state store using the same backend.
-		endpointStoreBasePath := endpointStorePath + endpointStoreName
-		logger.Printf("EndpointStateStore: using %s backend at %s", cnsconfig.StoreBackend, endpointStoreBasePath)
-		endpointStateStore, err = store.NewStore(cnsconfig.StoreBackend, endpointStoreBasePath, endpointStoreLock, nil)
+		endpointDBPath := endpointStorePath + endpointStoreName + ".bolt.db"
+		logger.Printf("EndpointStore: opening bolt store at %s", endpointDBPath)
+		endpointStore, err = cnsstore.OpenEndpointStore(endpointDBPath, nil)
 		if err != nil {
-			logger.Errorf("Failed to create endpoint state store at %s: %v\n", endpointStoreBasePath, err)
+			logger.Errorf("Failed to open endpoint bolt store at %s: %v\n", endpointDBPath, err)
 			return
+		}
+
+		// Migrate from legacy JSON store if present.
+		jsonEndpointPath := endpointStorePath + endpointStoreName + ".json"
+		if merr := cnsstore.MigrateEndpointState(context.Background(), jsonEndpointPath, endpointStore); merr != nil {
+			logger.Errorf("Warning: endpoint state migration failed: %v (continuing with empty state)", merr)
 		}
 	}
 
@@ -770,10 +770,16 @@ func main() {
 
 	imdsClient := imds.NewClient()
 	httpRemoteRestService, err := restserver.NewHTTPRestService(&config, wsclient, &wsProxy, &restserver.IPtablesProvider{}, nmaClient,
-		endpointStateStore, conflistGenerator, homeAzMonitor, imdsClient)
+		endpointStore, conflistGenerator, homeAzMonitor, imdsClient)
 	if err != nil {
 		logger.Errorf("Failed to create CNS object, err:%v.\n", err)
 		return
+	}
+
+	// Configure IPAM concurrency limiter if specified.
+	if cnsconfig.MaxConcurrentIPRequests > 0 {
+		httpRemoteRestService.SetIPAMConcurrencyLimit(cnsconfig.MaxConcurrentIPRequests)
+		logger.Printf("[Azure CNS] IPAM concurrency limit set to %d", cnsconfig.MaxConcurrentIPRequests)
 	}
 
 	// Set CNS options.
@@ -1137,6 +1143,7 @@ func main() {
 	logger.Printf("stop cns service")
 	// Cleanup.
 	if httpRemoteRestService != nil {
+		httpRemoteRestService.Close() // drain async endpoint writer
 		httpRemoteRestService.Stop()
 	}
 
@@ -1418,13 +1425,20 @@ func InitializeCRDState(ctx context.Context, z *zap.Logger, httpRestService cns.
 	}
 
 	// perform state migration from CNI in case CNS is set to manage the endpoint state and has emty state
-	if cnsconfig.EnableStateMigration && !httpRestServiceImplementation.EndpointStateStore.Exists() {
-		if err = PopulateCNSEndpointState(httpRestServiceImplementation.EndpointStateStore); err != nil {
-			return errors.Wrap(err, "failed to create CNS EndpointState From CNI")
-		}
-		// endpoint state needs to be loaded in memory so the subsequent Delete calls remove the state and release the IPs.
-		if err = httpRestServiceImplementation.EndpointStateStore.Read(restserver.EndpointStoreKey, &httpRestServiceImplementation.EndpointState); err != nil {
-			return errors.Wrap(err, "failed to restore endpoint state")
+	if cnsconfig.EnableStateMigration && httpRestServiceImplementation.EndpointStore() != nil {
+		eps, _ := httpRestServiceImplementation.EndpointStore().ListEndpoints(ctx)
+		if len(eps) == 0 {
+			if err = PopulateCNSEndpointState(ctx, httpRestServiceImplementation.EndpointStore()); err != nil {
+				return errors.Wrap(err, "failed to create CNS EndpointState From CNI")
+			}
+			// Reload into in-memory map.
+			eps, err = httpRestServiceImplementation.EndpointStore().ListEndpoints(ctx)
+			if err != nil {
+				return errors.Wrap(err, "failed to list endpoint state after migration")
+			}
+			for containerID, rec := range eps {
+				httpRestServiceImplementation.EndpointState[containerID] = restserver.EndpointRecordToInfo(rec)
+			}
 		}
 	}
 
@@ -1645,14 +1659,8 @@ func getPodInfoByIPProvider(
 	switch {
 	case cnsconfig.ManageEndpointState:
 		logger.Printf("Initializing from self managed endpoint store")
-		podInfoByIPProvider, err = cnspodprovider.New(httpRestServiceImplementation.EndpointStateStore) // get reference to endpoint state store from rest server
-		if err != nil {
-			if errors.Is(err, store.ErrKeyNotFound) {
-				logger.Printf("[Azure CNS] No endpoint state found, skipping initializing CNS state")
-			} else {
-				return podInfoByIPProvider, errors.Wrap(err, "failed to create CNS PodInfoProvider")
-			}
-		}
+		// Build pod info from in-memory endpoint state (already loaded from bolt).
+		podInfoByIPProvider = cnspodprovider.NewFromEndpointState(httpRestServiceImplementation.EndpointState)
 	default:
 		logger.Printf("Initializing from CNI")
 		podInfoByIPProvider, err = cnipodprovider.New()
@@ -1738,16 +1746,40 @@ func buildAndCreateNodeInfo(ctx context.Context, imdsCli VMUniqueIDGetter, nmaCl
 	return nil
 }
 
-// PopulateCNSEndpointState initilizes CNS Endpoint State by Migrating the CNI state.
-func PopulateCNSEndpointState(endpointStateStore store.KeyValueStore) error {
+// PopulateCNSEndpointState initializes CNS Endpoint State by migrating the CNI state.
+func PopulateCNSEndpointState(ctx context.Context, endpointStore *cnsstore.EndpointBoltStore) error {
 	logger.Printf("State Migration is enabled")
 	endpointState, err := cnspodprovider.MigrateCNISate()
 	if err != nil {
 		return errors.Wrap(err, "failed to create CNS Endpoint state from CNI")
 	}
-	err = endpointStateStore.Write(restserver.EndpointStoreKey, endpointState)
-	if err != nil {
-		return fmt.Errorf("failed to write endpoint state to store: %w", err)
+	for containerID, epInfo := range endpointState {
+		if epInfo == nil {
+			continue
+		}
+		rec := cnsstore.EndpointRecord{
+			PodName:       epInfo.PodName,
+			PodNamespace:  epInfo.PodNamespace,
+			IfnameToIPMap: make(map[string]*cnsstore.IPInfoRecord, len(epInfo.IfnameToIPMap)),
+		}
+		for ifn, ipInfo := range epInfo.IfnameToIPMap {
+			if ipInfo == nil {
+				continue
+			}
+			rec.IfnameToIPMap[ifn] = &cnsstore.IPInfoRecord{
+				IPv4:               ipInfo.IPv4,
+				IPv6:               ipInfo.IPv6,
+				HnsEndpointID:      ipInfo.HnsEndpointID,
+				HnsNetworkID:       ipInfo.HnsNetworkID,
+				HostVethName:       ipInfo.HostVethName,
+				MacAddress:         ipInfo.MacAddress,
+				NetworkContainerID: ipInfo.NetworkContainerID,
+				NICType:            ipInfo.NICType,
+			}
+		}
+		if err := endpointStore.PutEndpoint(ctx, containerID, rec); err != nil {
+			return fmt.Errorf("failed to write endpoint %s to bolt store: %w", containerID, err)
+		}
 	}
 	return nil
 }

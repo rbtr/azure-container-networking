@@ -111,6 +111,28 @@ var (
 		},
 		[]string{},
 	)
+
+	asyncEndpointWriteFailures = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "async_endpoint_write_failures_total",
+			Help: "Total number of failed async endpoint state writes",
+		},
+	)
+
+	ipamConcurrencyQueueDepth = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "ipam_concurrency_queue_depth",
+			Help: "Current number of IPAM requests waiting for the concurrency semaphore",
+		},
+	)
+
+	ipamConcurrencyWaitTime = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "ipam_concurrency_wait_seconds",
+			Help:    "Time spent waiting for the IPAM concurrency semaphore",
+			Buckets: prometheus.ExponentialBuckets(0.001, 2, 15), //nolint:gomnd // 1ms to ~16s
+		},
+	)
 )
 
 func init() {
@@ -126,6 +148,9 @@ func init() {
 		availableIPCount,
 		pendingProgrammingIPCount,
 		pendingReleaseIPCount,
+		asyncEndpointWriteFailures,
+		ipamConcurrencyQueueDepth,
+		ipamConcurrencyWaitTime,
 	)
 }
 

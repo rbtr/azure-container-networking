@@ -1,0 +1,24 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nodeNetConfigEditor
+  namespace: kube-system
+rules:
+- apiGroups:
+  - acn.azure.com
+  resources:
+  - nodenetworkconfigs
+  verbs:
+  - get
+  - list
+  - watch
+  - patch
+  - update
+- apiGroups:
+  - acn.azure.com
+  resources:
+  - clustersubnetstates
+  verbs:
+  - get
+  - list
+  - watch

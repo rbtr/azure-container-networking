@@ -52,6 +52,10 @@ type CNSConfig struct {
 	// StoreBackend selects the persistent store implementation.
 	// Valid values: "json" (default), "bbolt", "sqlite".
 	StoreBackend                string
+	// MaxConcurrentIPRequests limits how many IPAM request/release operations
+	// may execute concurrently. 0 = unlimited (default for backward compat).
+	// Recommended: 10-20 to avoid kernel RTNL lock contention during pod bursts.
+	MaxConcurrentIPRequests     int
 	SyncHostNCTimeoutMs         int
 	SyncHostNCVersionIntervalMs int
 	TLSCertificatePath          string

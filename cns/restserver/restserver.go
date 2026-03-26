@@ -16,6 +16,7 @@ import (
 	"github.com/Azure/azure-container-networking/cns/networkcontainers"
 	"github.com/Azure/azure-container-networking/cns/nodesubnet"
 	"github.com/Azure/azure-container-networking/cns/routes"
+	cnsstore "github.com/Azure/azure-container-networking/cns/store"
 	"github.com/Azure/azure-container-networking/cns/types"
 	"github.com/Azure/azure-container-networking/cns/types/bounded"
 	"github.com/Azure/azure-container-networking/cns/wireserver"
@@ -95,10 +96,13 @@ type HTTPRestService struct {
 	sync.RWMutex
 	dncPartitionKey            string
 	EndpointState              map[string]*EndpointInfo // key : container id
-	EndpointStateStore         store.KeyValueStore
+	endpointStateMu            sync.RWMutex             // protects EndpointState map independently of IP pool lock
+	endpointStore              *cnsstore.EndpointBoltStore
+	endpointWriter             *endpointWriter // async, per-record endpoint state persistence
 	cniConflistGenerator       CNIConflistGenerator
 	generateCNIConflistOnce    sync.Once
 	IPConfigsHandlerMiddleware cns.IPConfigsHandlerMiddleware
+	ipamSemaphore              *ipamSemaphore // limits concurrent IPAM operations; nil disables
 	PnpIDByMacAddress          map[string]string
 	imdsClient                 imdsClient
 	nodesubnetIPFetcher        *nodesubnet.IPFetcher
@@ -192,7 +196,7 @@ type networkInfo struct {
 
 // NewHTTPRestService creates a new HTTP Service object.
 func NewHTTPRestService(config *common.ServiceConfig, wscli interfaceGetter, wsproxy wireserverProxy, iptg iptablesGetter, nmagentClient nmagentClient,
-	endpointStateStore store.KeyValueStore, gen CNIConflistGenerator, homeAzMonitor *HomeAzMonitor,
+	endpointStore *cnsstore.EndpointBoltStore, gen CNIConflistGenerator, homeAzMonitor *HomeAzMonitor,
 	imdsClient imdsClient,
 ) (*HTTPRestService, error) {
 	service, err := cns.NewService(config.Name, config.Version, config.ChannelMode, config.Store)
@@ -233,7 +237,7 @@ func NewHTTPRestService(config *common.ServiceConfig, wscli interfaceGetter, wsp
 		gen = &NoOpConflistGenerator{}
 	}
 
-	return &HTTPRestService{
+	svc := &HTTPRestService{
 		Service:                  service,
 		store:                    service.Service.Store,
 		dockerClient:             dc,
@@ -247,12 +251,17 @@ func NewHTTPRestService(config *common.ServiceConfig, wscli interfaceGetter, wsp
 		routingTable:             routingTable,
 		state:                    serviceState,
 		podsPendingIPAssignment:  bounded.NewTimedSet(250), // nolint:gomnd // maxpods
-		EndpointStateStore:       endpointStateStore,
+		endpointStore:            endpointStore,
 		EndpointState:            make(map[string]*EndpointInfo),
 		homeAzMonitor:            homeAzMonitor,
 		cniConflistGenerator:     gen,
 		imdsClient:               imdsClient,
-	}, nil
+		ipamSemaphore:            newIPAMSemaphore(0), // disabled by default; set via SetIPAMConcurrencyLimit
+	}
+	if endpointStore != nil {
+		svc.endpointWriter = newEndpointWriter(endpointStore)
+	}
+	return svc, nil
 }
 
 // Init starts the CNS listener.
@@ -398,4 +407,31 @@ func (service *HTTPRestService) MustGenerateCNIConflistOnce() {
 
 func (service *HTTPRestService) AttachIPConfigsHandlerMiddleware(middleware cns.IPConfigsHandlerMiddleware) {
 	service.IPConfigsHandlerMiddleware = middleware
+}
+
+// SetIPAMConcurrencyLimit configures the maximum number of IPAM operations
+// that may execute concurrently. 0 or negative disables limiting.
+func (service *HTTPRestService) SetIPAMConcurrencyLimit(maxConcurrent int) {
+	service.ipamSemaphore = newIPAMSemaphore(maxConcurrent)
+}
+
+// Close cleanly shuts down background goroutines (e.g. the async endpoint
+// state writer). It should be called when the service is stopping.
+func (service *HTTPRestService) Close() {
+	if service.endpointWriter != nil {
+		service.endpointWriter.Close()
+	}
+	if service.endpointStore != nil {
+		service.endpointStore.Close() //nolint:errcheck // best-effort at shutdown
+	}
+}
+
+// EndpointStore returns the bolt endpoint store, if configured.
+func (service *HTTPRestService) EndpointStore() *cnsstore.EndpointBoltStore {
+	return service.endpointStore
+}
+
+// SetEndpointStore sets the bolt endpoint store (used by tests).
+func (service *HTTPRestService) SetEndpointStore(s *cnsstore.EndpointBoltStore) {
+	service.endpointStore = s
 }

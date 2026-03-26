@@ -17,7 +17,6 @@ import (
 	"github.com/Azure/azure-container-networking/cns/logger"
 	"github.com/Azure/azure-container-networking/cns/types"
 	"github.com/Azure/azure-container-networking/common"
-	"github.com/Azure/azure-container-networking/store"
 	"github.com/pkg/errors"
 	"golang.org/x/exp/maps"
 )
@@ -300,6 +299,23 @@ func (service *HTTPRestService) RequestIPConfigsHandler(w http.ResponseWriter, r
 	if err != nil {
 		return
 	}
+
+	// Acquire IPAM concurrency slot before processing.
+	release, err := service.ipamSemaphore.Acquire(r.Context())
+	if err != nil {
+		resp := &cns.IPConfigsResponse{
+			Response: cns.Response{
+				ReturnCode: types.FailedToAllocateIPConfig,
+				Message:    fmt.Sprintf("IPAM request timed out waiting for concurrency slot: %v", err),
+			},
+		}
+		w.Header().Set(cnsReturnCode, resp.Response.ReturnCode.String())
+		encErr := common.Encode(w, &resp)
+		logger.ResponseEx(opName, ipconfigsRequest, resp, resp.Response.ReturnCode, encErr)
+		return
+	}
+	defer release()
+
 	var ipConfigsResp *cns.IPConfigsResponse
 
 	// Check if IPConfigsHandlerMiddleware is set
@@ -332,11 +348,11 @@ func (service *HTTPRestService) RequestIPConfigsHandler(w http.ResponseWriter, r
 }
 
 func (service *HTTPRestService) updateEndpointState(ipconfigsRequest cns.IPConfigsRequest, podInfo cns.PodInfo, podIPInfo []cns.PodIpInfo) error {
-	if service.EndpointStateStore == nil {
+	if service.endpointStore == nil {
 		return ErrStoreEmpty
 	}
-	service.Lock()
-	defer service.Unlock()
+	service.endpointStateMu.Lock()
+	defer service.endpointStateMu.Unlock()
 	logger.Printf("[updateEndpointState] Updating endpoint state for infra container %s", ipconfigsRequest.InfraContainerID)
 	for i := range podIPInfo {
 		if endpointInfo, ok := service.EndpointState[ipconfigsRequest.InfraContainerID]; ok {
@@ -384,11 +400,11 @@ func (service *HTTPRestService) updateEndpointState(ipconfigsRequest cns.IPConfi
 			endpointInfo.IfnameToIPMap[ipconfigsRequest.Ifname] = ipInfo
 			service.EndpointState[ipconfigsRequest.InfraContainerID] = endpointInfo
 		}
+	}
 
-		err := service.EndpointStateStore.Write(EndpointStoreKey, service.EndpointState)
-		if err != nil {
-			return fmt.Errorf("failed to write endpoint state to store: %w", err)
-		}
+	// Persist asynchronously — the in-memory state is authoritative.
+	if service.endpointWriter != nil {
+		service.endpointWriter.PutEndpoint(ipconfigsRequest.InfraContainerID, service.EndpointState[ipconfigsRequest.InfraContainerID])
 	}
 	return nil
 }
@@ -508,6 +524,20 @@ func (service *HTTPRestService) ReleaseIPConfigsHandler(w http.ResponseWriter, r
 		return
 	}
 
+	// Acquire IPAM concurrency slot before processing.
+	release, err := service.ipamSemaphore.Acquire(r.Context())
+	if err != nil {
+		resp := cns.Response{
+			ReturnCode: types.FailedToAllocateIPConfig,
+			Message:    fmt.Sprintf("IPAM release timed out waiting for concurrency slot: %v", err),
+		}
+		w.Header().Set(cnsReturnCode, resp.ReturnCode.String())
+		encErr := common.Encode(w, &resp)
+		logger.ResponseEx(opName, ipconfigsRequest, resp, resp.ReturnCode, encErr)
+		return
+	}
+	defer release()
+
 	resp, err := service.ReleaseIPConfigHandlerHelper(r.Context(), ipconfigsRequest)
 	if err != nil {
 		w.Header().Set(cnsReturnCode, resp.Response.ReturnCode.String())
@@ -521,17 +551,16 @@ func (service *HTTPRestService) ReleaseIPConfigsHandler(w http.ResponseWriter, r
 }
 
 func (service *HTTPRestService) removeEndpointState(podInfo cns.PodInfo) error {
-	if service.EndpointStateStore == nil {
+	if service.endpointStore == nil {
 		return ErrStoreEmpty
 	}
-	service.Lock()
-	defer service.Unlock()
+	service.endpointStateMu.Lock()
+	defer service.endpointStateMu.Unlock()
 	logger.Printf("[removeEndpointState] Removing endpoint state for infra container %s", podInfo.InfraContainerID())
 	if _, ok := service.EndpointState[podInfo.InfraContainerID()]; ok {
 		delete(service.EndpointState, podInfo.InfraContainerID())
-		err := service.EndpointStateStore.Write(EndpointStoreKey, service.EndpointState)
-		if err != nil {
-			return fmt.Errorf("failed to write endpoint state to store: %w", err)
+		if service.endpointWriter != nil {
+			service.endpointWriter.DeleteEndpoint(podInfo.InfraContainerID())
 		}
 	} else { // will not fail if no endpoint state for infra container id is found
 		logger.Printf("[removeEndpointState] No endpoint state found for infra container %s", podInfo.InfraContainerID())
@@ -1153,9 +1182,7 @@ func validateDesiredIPAddresses(desiredIPs []string) error {
 func (service *HTTPRestService) EndpointHandlerAPI(w http.ResponseWriter, r *http.Request) {
 	opName := "endpointHandler"
 	logger.Printf("[EndpointHandlerAPI] EndpointHandlerAPI received request with http Method %s", r.Method)
-	service.Lock()
-	defer service.Unlock()
-	// Check if CNS is managing the CNI statefile
+	// Check if CNS is managing the CNI statefile (Options is set at startup, no lock needed)
 	if service.Options[common.OptManageEndpointState] == false {
 		response := cns.Response{
 			ReturnCode: types.UnexpectedError,
@@ -1165,6 +1192,9 @@ func (service *HTTPRestService) EndpointHandlerAPI(w http.ResponseWriter, r *htt
 		logger.Response(opName, response, response.ReturnCode, err)
 		return
 	}
+	// Endpoint state is protected by endpointStateMu, not the IP pool RWMutex.
+	service.endpointStateMu.Lock()
+	defer service.endpointStateMu.Unlock()
 	switch r.Method {
 	case http.MethodGet:
 		service.GetEndpointHandler(w, r)
@@ -1183,7 +1213,7 @@ func (service *HTTPRestService) DeleteEndpointStateHandler(w http.ResponseWriter
 	logger.Printf("[DeleteEndpointStateHandler] DeleteEndpointState for %s", r.URL.Path) //nolint:staticcheck // reason: using deprecated call until migration to new API
 	endpointID := strings.TrimPrefix(r.URL.Path, cns.EndpointPath)
 
-	if service.EndpointStateStore == nil {
+	if service.endpointStore == nil {
 		response := cns.Response{
 			ReturnCode: types.NilEndpointStateStore,
 			Message:    "[DeleteEndpointStateHandler] EndpointStateStore is not initialized",
@@ -1219,7 +1249,7 @@ func (service *HTTPRestService) DeleteEndpointStateHandler(w http.ResponseWriter
 }
 
 func (service *HTTPRestService) DeleteEndpointStateHelper(endpointID string) error {
-	if service.EndpointStateStore == nil {
+	if service.endpointStore == nil {
 		return ErrStoreEmpty
 	}
 	logger.Printf("[deleteEndpointState] Deleting Endpoint state from state file %s", endpointID) //nolint:staticcheck // reason: using deprecated call until migration to new API
@@ -1232,10 +1262,8 @@ func (service *HTTPRestService) DeleteEndpointStateHelper(endpointID string) err
 	// Delete the endpoint from the state
 	delete(service.EndpointState, endpointID)
 
-	// Write the updated state back to the store
-	err := service.EndpointStateStore.Write(EndpointStoreKey, service.EndpointState)
-	if err != nil {
-		return fmt.Errorf("[deleteEndpointState] failed to write endpoint state to store: %w", err)
+	if service.endpointWriter != nil {
+		service.endpointWriter.DeleteEndpoint(endpointID)
 	}
 	logger.Printf("[deleteEndpointState] successfully deleted endpoint %s from state file", endpointID) //nolint:staticcheck // reason: using deprecated call until migration to new API
 	return nil
@@ -1280,27 +1308,17 @@ func (service *HTTPRestService) GetEndpointHandler(w http.ResponseWriter, r *htt
 	logger.Response(opName, response, response.Response.ReturnCode, err)
 }
 
-// GetEndpointHelper returns the state of the given endpointId
+// GetEndpointHelper returns the state of the given endpointId.
+// The in-memory EndpointState is the authoritative source of truth.
 func (service *HTTPRestService) GetEndpointHelper(endpointID string) (*EndpointInfo, error) {
 	logger.Printf("[GetEndpointState] Get endpoint state for infra container %s", endpointID)
 
 	// Skip if a store is not provided.
-	if service.EndpointStateStore == nil {
+	if service.endpointStore == nil {
 		logger.Printf("[GetEndpointState]  store not initialized.")
 		return nil, ErrStoreEmpty
 	}
 
-	err := service.EndpointStateStore.Read(EndpointStoreKey, &service.EndpointState)
-	if err != nil {
-
-		if errors.Is(err, store.ErrKeyNotFound) {
-			// Nothing to retrieve.
-			logger.Printf("[GetEndpointState]  No endpoint state to retrieve.\n")
-		} else {
-			logger.Errorf("[GetEndpointState]  Failed to retrieve state, err:%v", err)
-		}
-		return nil, ErrEndpointStateNotFound
-	}
 	if endpointInfo, ok := service.EndpointState[endpointID]; ok {
 		logger.Warnf("[GetEndpointState] Found existing endpoint state for container %s", endpointID)
 		return endpointInfo, nil
@@ -1369,7 +1387,7 @@ func (service *HTTPRestService) UpdateEndpointHandler(w http.ResponseWriter, r *
 
 // UpdateEndpointHelper updates the state of the given endpointId with HNSId, VethName or other InterfaceInfo fields
 func (service *HTTPRestService) UpdateEndpointHelper(endpointID string, req map[string]*IPInfo) error {
-	if service.EndpointStateStore == nil {
+	if service.endpointStore == nil {
 		return ErrStoreEmpty
 	}
 	logger.Printf("[updateEndpoint] Updating endpoint state for infra container %s", endpointID)
@@ -1386,9 +1404,8 @@ func (service *HTTPRestService) UpdateEndpointHelper(endpointID string, req map[
 		// updating the ipInfoMap
 		updateIPInfoMap(endpointInfo.IfnameToIPMap, interfaceInfo, ifName, endpointID)
 	}
-	err := service.EndpointStateStore.Write(EndpointStoreKey, service.EndpointState)
-	if err != nil {
-		return fmt.Errorf("[updateEndpoint] failed to write endpoint state to store for pod %s :  %w", endpointInfo.PodName, err)
+	if service.endpointWriter != nil {
+		service.endpointWriter.PutEndpoint(endpointID, service.EndpointState[endpointID])
 	}
 	logger.Printf("[updateEndpoint] successfully write the state to the file %s", endpointID)
 	return nil

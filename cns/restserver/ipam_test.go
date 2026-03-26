@@ -15,9 +15,9 @@ import (
 	"github.com/Azure/azure-container-networking/cns/fakes"
 	"github.com/Azure/azure-container-networking/cns/middlewares"
 	"github.com/Azure/azure-container-networking/cns/middlewares/mock"
+	cnsstore "github.com/Azure/azure-container-networking/cns/store"
 	"github.com/Azure/azure-container-networking/cns/types"
 	nma "github.com/Azure/azure-container-networking/nmagent"
-	"github.com/Azure/azure-container-networking/store"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -76,7 +76,7 @@ type ncState struct {
 func getTestService(orchestratorType string) *HTTPRestService {
 	var config common.ServiceConfig
 	httpsvc, _ := NewHTTPRestService(&config, &fakes.WireserverClientFake{}, &fakes.WireserverProxyFake{},
-		&IPtablesProvider{}, &fakes.NMAgentClientFake{}, store.NewMockStore(""), nil, nil,
+		&IPtablesProvider{}, &fakes.NMAgentClientFake{}, nil, nil, nil,
 		fakes.NewMockIMDSClient())
 	svc = httpsvc
 	setOrchestratorTypeInternal(orchestratorType)
@@ -223,6 +223,8 @@ func TestEndpointStateReadAndWrite(t *testing.T) {
 // Tests the creation of an endpoint using the NCs and IPs as input and then tests the deletion of that endpoint
 func endpointStateReadAndWrite(t *testing.T, ncStates []ncState) {
 	svc := getTestService(cns.KubernetesCRD)
+	epStore := openTestEndpointStore(t)
+	svc.SetEndpointStore(epStore)
 	ipconfigs := make(map[string]cns.IPConfigurationStatus, 0)
 	for i := range ncStates {
 		state := newPodState(ncStates[i].ips[0], ipIDs[i][0], ncStates[i].ncID, types.Available, 0)
@@ -2363,7 +2365,11 @@ func createAndSaveMockNCRequest(t *testing.T, svc *HTTPRestService, ncID string,
 // Validate Statefile in Stateless CNI scenarios
 func TestStatelessCNIStateFile(t *testing.T) {
 	svc := getTestService(cns.KubernetesCRD)
-	svc.EndpointStateStore = store.NewMockStore("")
+	tmpDir := t.TempDir()
+	epStore, err := cnsstore.OpenEndpointStore(tmpDir+"/test-ep.bolt.db", nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { epStore.Close() })
+	svc.SetEndpointStore(epStore)
 	// test Case 1 - AKS SIngleTenancy
 	endpointInfo1ContainerID := "0a4917617e15d24dc495e407d8eb5c88e4406e58fa209e4eb75a2c2fb7045eea"
 	endpointInfo1 := &EndpointInfo{IfnameToIPMap: make(map[string]*IPInfo)}
@@ -2391,7 +2397,6 @@ func TestStatelessCNIStateFile(t *testing.T) {
 		name       string
 		endpointID string
 		req        map[string]*IPInfo
-		store      store.KeyValueStore
 		want       *EndpointInfo
 		wantErr    bool
 	}{
@@ -2399,7 +2404,6 @@ func TestStatelessCNIStateFile(t *testing.T) {
 			name:       "single-tenancy: update endpoint without error",
 			endpointID: endpointInfo1ContainerID,
 			req:        req1,
-			store:      svc.EndpointStateStore,
 			want: &EndpointInfo{
 				PodName: "pod1", PodNamespace: "default", IfnameToIPMap: map[string]*IPInfo{
 					"eth0": {
@@ -2415,7 +2419,6 @@ func TestStatelessCNIStateFile(t *testing.T) {
 			name:       "ACI: update and create absent endpoint without error",
 			endpointID: endpointInfo2ContainerID,
 			req:        endpointInfo2.IfnameToIPMap,
-			store:      svc.EndpointStateStore,
 			want:       endpointInfo2,
 			wantErr:    false,
 		},

@@ -20,6 +20,15 @@ func New(endpointStore store.KeyValueStore) (cns.PodInfoByIPProvider, error) {
 	return podInfoProvider(endpointStore)
 }
 
+// NewFromEndpointState returns a PodInfoByIPProvider from an already-loaded
+// in-memory endpoint state map. This avoids reading from disk when the state
+// has already been restored (e.g. from boltdb at startup).
+func NewFromEndpointState(state map[string]*restserver.EndpointInfo) cns.PodInfoByIPProvider {
+	return cns.PodInfoByIPProviderFunc(func() (map[string]cns.PodInfo, error) {
+		return endpointStateToPodInfoByIP(state)
+	})
+}
+
 func podInfoProvider(endpointStore store.KeyValueStore) (cns.PodInfoByIPProvider, error) {
 	var state map[string]*restserver.EndpointInfo
 	err := endpointStore.Read(restserver.EndpointStoreKey, &state)

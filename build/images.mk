@@ -1,9 +1,9 @@
 # Source images
-export GO_IMG					?= mcr.microsoft.com/oss/go/microsoft/golang:1.24-azurelinux3.0
+export GO_IMG					?= mcr.microsoft.com/oss/go/microsoft/golang:1.25-azurelinux3.0
 export MARINER_CORE_IMG			?= mcr.microsoft.com/azurelinux/base/core:3.0
 export MARINER_DISTROLESS_IMG	?= mcr.microsoft.com/azurelinux/distroless/minimal:3.0
 export WIN_HPC_IMG				?= mcr.microsoft.com/oss/kubernetes/windows-host-process-containers-base-image:v1.0.0
-
+SHELL := /bin/bash
 
 # Pinned SHA images
 export GO_PIN					?= $(shell skopeo inspect docker://${GO_IMG} --format "{{.Name}}@{{.Digest}}")

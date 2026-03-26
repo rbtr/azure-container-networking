@@ -11,8 +11,8 @@ AZCLI   ?= docker run --rm -v $(AZCFG):/root/.azure -v $(KUBECFG):/root/.kube -v
 
 # overrideable defaults
 AUTOUPGRADE          ?= patch
-K8S_VER              ?= 1.33
-NODE_COUNT           ?= 2
+K8S_VER              ?= 1.35
+NODE_COUNT           ?= 1
 NODE_COUNT_WIN	     ?= $(NODE_COUNT)
 NODEUPGRADE          ?= NodeImage
 OS				     ?= linux # Used to signify if you want to bring up a windows nodePool on byocni clusters
@@ -20,6 +20,7 @@ OS_SKU               ?= Ubuntu
 OS_SKU_WIN           ?= Windows2022
 REGION               ?= westus2
 VM_SIZE	             ?= Standard_B2s
+VM_TEST_SIZE		 ?= Standard_D8ads_v6
 VM_SIZE_WIN          ?= Standard_B2s
 IP_TAG               ?= FirstPartyUsage=/NonProd
 IP_PREFIX            ?= serviceTaggedIp
@@ -41,7 +42,7 @@ VNET       ?= $(CLUSTER)
 ifeq ($(LTS),true)
 	LTS_ARGS=--k8s-support-plan AKSLongTermSupport --tier premium
 else
-	LTS_ARGS=
+	LTS_ARGS=--tier premium
 endif
 
 # Only use with *cilium* recipes
@@ -448,6 +449,16 @@ windows-swift-nodepool-up: ## Add windows node pool
 		--max-pods 250 \
 		--subscription $(SUB) \
 		--pod-subnet-id /subscriptions/$(SUB)/resourceGroups/$(GROUP)/providers/Microsoft.Network/virtualNetworks/$(VNET)/subnets/podnet
+
+linux-nodepool-up: ## Add linux node pool
+	$(AZCLI) aks nodepool add -g $(GROUP) -n testpool \
+		--node-count $(NODE_COUNT) \
+		--node-vm-size $(VM_TEST_SIZE) \
+		--cluster-name $(CLUSTER) \
+		--ssh-access disabled \
+		--os-type Linux \
+		--max-pods 250 \
+		--subscription $(SUB)
 
 linux-swiftv2-nodepool-up: ## Add linux node pool to swiftv2 cluster
 	$(AZCLI) aks nodepool add -g $(GROUP) -n nplinux \
