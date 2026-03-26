@@ -56,6 +56,11 @@ type CNSConfig struct {
 	// may execute concurrently. 0 = unlimited (default for backward compat).
 	// Recommended: 10-20 to avoid kernel RTNL lock contention during pod bursts.
 	MaxConcurrentIPRequests     int
+	// VethPoolSize sets the number of pre-created veth pairs CNS maintains.
+	// When > 0, CNS pre-creates veths in the background so that CNI ADD can
+	// skip the expensive veth creation / MTU / link-up netlink calls.
+	// 0 = disabled (default).
+	VethPoolSize                int
 	SyncHostNCTimeoutMs         int
 	SyncHostNCVersionIntervalMs int
 	TLSCertificatePath          string

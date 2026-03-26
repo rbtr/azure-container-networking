@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -780,6 +781,16 @@ func main() {
 	if cnsconfig.MaxConcurrentIPRequests > 0 {
 		httpRemoteRestService.SetIPAMConcurrencyLimit(cnsconfig.MaxConcurrentIPRequests)
 		logger.Printf("[Azure CNS] IPAM concurrency limit set to %d", cnsconfig.MaxConcurrentIPRequests)
+	}
+
+	// Start the pre-created veth pool if configured.
+	if cnsconfig.VethPoolSize > 0 {
+		mtu := 1500 // default
+		if iface, ifErr := net.InterfaceByName("eth0"); ifErr == nil {
+			mtu = iface.MTU
+		}
+		httpRemoteRestService.StartVethPool(rootCtx, mtu, cnsconfig.VethPoolSize)
+		logger.Printf("[Azure CNS] Veth pool started: size=%d mtu=%d", cnsconfig.VethPoolSize, mtu)
 	}
 
 	// Set CNS options.
