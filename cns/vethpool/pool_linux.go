@@ -131,12 +131,21 @@ func (p *Pool) replenishLoop(ctx context.Context) {
 
 // fill creates veths until the pool channel is full.
 func (p *Pool) fill() {
+	const maxConsecutiveFailures = 5
+	consecutiveFailures := 0
 	for len(p.ch) < p.poolSize {
 		vp, err := p.createVethPair()
 		if err != nil {
 			p.log.Warn("vethpool: failed to create veth pair", zap.Error(err))
+			consecutiveFailures++
+			if consecutiveFailures >= maxConsecutiveFailures {
+				p.log.Error("vethpool: too many consecutive failures, stopping fill",
+					zap.Int("failures", consecutiveFailures))
+				return
+			}
 			continue
 		}
+		consecutiveFailures = 0
 		select {
 		case p.ch <- vp:
 		default:

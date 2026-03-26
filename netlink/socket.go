@@ -63,7 +63,6 @@ func newSocket() (*socket, error) {
 
 	s := &socket{
 		fd:  fd,
-		pid: uint32(unix.Getpid()),
 		seq: 0,
 	}
 
@@ -76,7 +75,24 @@ func newSocket() (*socket, error) {
 		return nil, err
 	}
 
-	log.Debugf("[netlink] Socket created.\n")
+	// Retrieve the kernel-assigned port ID for this socket. We must use this
+	// (not Getpid()) because in PID-namespaced containers Getpid() returns the
+	// container-local PID (often 1), while the kernel assigns the port ID from
+	// the host PID namespace. Response matching compares Pid fields, so a
+	// mismatch causes every response to be silently dropped.
+	sa, err := unix.Getsockname(fd)
+	if err != nil {
+		unix.Close(fd)
+		log.Debugf("[netlink] Failed to get socket name, err=%v\n", err)
+		return nil, err
+	}
+	if nlsa, ok := sa.(*unix.SockaddrNetlink); ok {
+		s.pid = nlsa.Pid
+	} else {
+		s.pid = uint32(unix.Getpid())
+	}
+
+	log.Debugf("[netlink] Socket created, pid=%d.\n", s.pid)
 	return s, nil
 }
 
@@ -89,6 +105,7 @@ func (s *socket) close() {
 // Sends a netlink message.
 func (s *socket) send(msg *message) error {
 	msg.Seq = atomic.AddUint32(&s.seq, 1)
+	msg.Pid = s.pid
 	err := unix.Sendto(s.fd, msg.serialize(), 0, &s.sa)
 	log.Debugf("[netlink] Sent %+v, err=%v\n", *msg, err)
 	return err
