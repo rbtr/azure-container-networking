@@ -44,6 +44,16 @@ type TransparentEndpointClient struct {
 	netioshim         netio.NetIOInterface
 	plClient          platform.ExecClient
 	netUtilsClient    networkutils.NetworkUtils
+
+	// Batch state for reducing RTNL lock contention. Populated in
+	// AddEndpoints and flushed in MoveEndpointsToContainerNS so that
+	// post-creation ops (setState, setMTU, addRoutes, moveNetNs) are
+	// sent in a single netlink round-trip.
+	pendingBatch     *netlink.HostSetupBatch
+	hostIfIndex      int
+	containerIfIndex int
+	batchMTU         int
+	batchRoutes      []RouteInfo
 }
 
 func NewTransparentEndpointClient(
@@ -96,7 +106,16 @@ func (client *TransparentEndpointClient) AddEndpoints(epInfo *EndpointInfo) erro
 		logger.Error("Failed to parse the mac addrress", zap.String("defaultHostVethHwAddr", defaultHostVethHwAddr))
 	}
 
-	if err = client.netUtilsClient.CreateEndpoint(client.hostVethName, client.containerVethName, mac); err != nil {
+	// Create the veth pair (round-trip 1). All subsequent host-namespace
+	// netlink operations are batched into a single round-trip 2.
+	if err = client.netlink.AddLink(&netlink.VEthLink{
+		LinkInfo: netlink.LinkInfo{
+			Type:       netlink.LINK_TYPE_VETH,
+			Name:       client.hostVethName,
+			MacAddress: mac,
+		},
+		PeerName: client.containerVethName,
+	}); err != nil {
 		return newErrorTransparentEndpointClient(err)
 	}
 
@@ -107,6 +126,11 @@ func (client *TransparentEndpointClient) AddEndpoints(epInfo *EndpointInfo) erro
 			}
 		}
 	}()
+
+	// Disable router advertisement (proc write, not a netlink call).
+	if err = client.netUtilsClient.DisableRAForInterface(client.hostVethName); err != nil {
+		return newErrorTransparentEndpointClient(err)
+	}
 
 	containerIf, err := client.netioshim.GetNetworkInterfaceByName(client.containerVethName)
 	if err != nil {
@@ -122,16 +146,20 @@ func (client *TransparentEndpointClient) AddEndpoints(epInfo *EndpointInfo) erro
 
 	client.hostVethMac = hostVethIf.HardwareAddr
 
-	logger.Info("Setting mtu on veth interface", zap.Int("MTU", primaryIf.MTU), zap.String("hostVethName", client.hostVethName))
-	if err := client.netlink.SetLinkMTU(client.hostVethName, primaryIf.MTU); err != nil {
-		logger.Error("Setting mtu failed for hostveth", zap.String("hostVethName", client.hostVethName),
-			zap.Error(err))
-	}
+	// Initialize batch for all remaining host-namespace netlink operations.
+	// This batches: setState UP, setMTU ×2, addRoutes, and moveNetNs into
+	// a single send+recv cycle (round-trip 2).
+	client.pendingBatch = netlink.NewHostSetupBatch()
+	client.hostIfIndex = hostVethIf.Index
+	client.containerIfIndex = containerIf.Index
+	client.batchMTU = primaryIf.MTU
 
-	if err := client.netlink.SetLinkMTU(client.containerVethName, primaryIf.MTU); err != nil {
-		logger.Error("Setting mtu failed for containerveth", zap.String("containerVethName", client.containerVethName),
-			zap.Error(err))
-	}
+	client.pendingBatch.SetLinkUp(hostVethIf.Index)
+
+	logger.Info("Batching mtu on veth interfaces", zap.Int("MTU", primaryIf.MTU),
+		zap.String("hostVethName", client.hostVethName))
+	client.pendingBatch.SetLinkMTU(hostVethIf.Index, primaryIf.MTU)
+	client.pendingBatch.SetLinkMTU(containerIf.Index, primaryIf.MTU)
 
 	return nil
 }
@@ -155,10 +183,26 @@ func (client *TransparentEndpointClient) AddEndpointRules(epInfo *EndpointInfo) 
 		logger.Info("Adding route for the", zap.String("ip", ipNet.String()))
 		routeInfo.Dst = ipNet
 		routeInfoList = append(routeInfoList, routeInfo)
+
+		// If batching, add routes directly to the pending batch.
+		if client.pendingBatch != nil {
+			family := netlink.GetIPAddressFamily(ipNet.IP)
+			client.pendingBatch.AddRoute(&netlink.Route{
+				Family:    family,
+				Dst:       &ipNet,
+				LinkIndex: client.hostIfIndex,
+			})
+		}
 	}
 
-	if err := addRoutes(client.netlink, client.netioshim, client.hostVethName, routeInfoList); err != nil {
-		return newErrorTransparentEndpointClient(err)
+	// Store routes for potential fallback.
+	client.batchRoutes = routeInfoList
+
+	// If not batching, use the original individual-call path.
+	if client.pendingBatch == nil {
+		if err := addRoutes(client.netlink, client.netioshim, client.hostVethName, routeInfoList); err != nil {
+			return newErrorTransparentEndpointClient(err)
+		}
 	}
 
 	logger.Info("calling setArpProxy for", zap.String("hostVethName", client.hostVethName))
@@ -194,8 +238,54 @@ func (client *TransparentEndpointClient) DeleteEndpointRules(ep *endpoint) {
 }
 
 func (client *TransparentEndpointClient) MoveEndpointsToContainerNS(epInfo *EndpointInfo, nsID uintptr) error {
-	// Move the container interface to container's network namespace.
 	logger.Info("Setting link netns", zap.String("containerVethName", client.containerVethName), zap.String("NetNsPath", epInfo.NetNsPath))
+
+	if client.pendingBatch != nil {
+		// Add the netns move as the final operation in the batch.
+		client.pendingBatch.SetLinkNetNs(client.containerIfIndex, nsID)
+
+		logger.Info("Executing batched host-namespace netlink operations",
+			zap.Int("ops", client.pendingBatch.Len()))
+
+		if err := client.pendingBatch.Execute(); err != nil {
+			// Batch failed — fall back to individual netlink calls.
+			logger.Error("Batch execute failed, falling back to individual ops", zap.Error(err))
+			client.pendingBatch = nil
+			return client.executeFallback(nsID)
+		}
+		client.pendingBatch = nil
+		return nil
+	}
+
+	// No batch (e.g. tests or non-standard code path): individual call.
+	if err := client.netlink.SetLinkNetNs(client.containerVethName, nsID); err != nil {
+		return newErrorTransparentEndpointClient(err)
+	}
+
+	return nil
+}
+
+// executeFallback replays all batched operations using individual netlink
+// interface calls. This is the recovery path when batch Execute fails.
+func (client *TransparentEndpointClient) executeFallback(nsID uintptr) error {
+	if err := client.netlink.SetLinkState(client.hostVethName, true); err != nil {
+		return newErrorTransparentEndpointClient(err)
+	}
+
+	if err := client.netlink.SetLinkMTU(client.hostVethName, client.batchMTU); err != nil {
+		logger.Error("Fallback: setting mtu failed for hostveth",
+			zap.String("hostVethName", client.hostVethName), zap.Error(err))
+	}
+
+	if err := client.netlink.SetLinkMTU(client.containerVethName, client.batchMTU); err != nil {
+		logger.Error("Fallback: setting mtu failed for containerveth",
+			zap.String("containerVethName", client.containerVethName), zap.Error(err))
+	}
+
+	if err := addRoutes(client.netlink, client.netioshim, client.hostVethName, client.batchRoutes); err != nil {
+		return newErrorTransparentEndpointClient(err)
+	}
+
 	if err := client.netlink.SetLinkNetNs(client.containerVethName, nsID); err != nil {
 		return newErrorTransparentEndpointClient(err)
 	}

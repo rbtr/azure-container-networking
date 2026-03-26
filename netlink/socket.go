@@ -129,6 +129,36 @@ func (s *socket) receive() ([]syscall.NetlinkMessage, error) {
 	return syscall.ParseNetlinkMessage(buffer)
 }
 
+// sendBatchAndWaitForAcks sends multiple netlink messages on the socket and
+// waits for an ACK for each. All messages are sent before any ACKs are read,
+// reducing the number of send/recv round-trips from N to 1 for N messages.
+// The caller must not hold s.Lock; this method acquires it for the entire batch.
+func (s *socket) sendBatchAndWaitForAcks(msgs []*message) error {
+	if len(msgs) == 0 {
+		return nil
+	}
+	if len(msgs) == 1 {
+		return s.sendAndWaitForAck(msgs[0])
+	}
+
+	s.Lock()
+	defer s.Unlock()
+
+	for _, msg := range msgs {
+		if err := s.send(msg); err != nil {
+			return fmt.Errorf("batch send failed at seq %d: %w", msg.Seq, err)
+		}
+	}
+
+	for _, msg := range msgs {
+		if _, err := s.receiveResponse(msg); err != nil {
+			return fmt.Errorf("batch ack failed at seq %d: %w", msg.Seq, err)
+		}
+	}
+
+	return nil
+}
+
 // Receives the response for the given sent message and returns the parsed message.
 func (s *socket) receiveResponse(sent *message) ([]*message, error) {
 	var messages []*message
