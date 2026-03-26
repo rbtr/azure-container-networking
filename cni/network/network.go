@@ -824,6 +824,13 @@ func (plugin *NetPlugin) createEpInfo(opt *createEpInfoOpt) (*network.EndpointIn
 
 	setEndpointOptions(opt.cnsNetworkConfig, &endpointInfo, vethName)
 
+	// Propagate pre-created veth pair info so the endpoint client can skip creation.
+	if opt.ifInfo.HostVethName != "" {
+		endpointInfo.Data[network.PreCreatedHostVethKey] = opt.ifInfo.HostVethName
+		endpointInfo.Data[network.PreCreatedContainerVethKey] = opt.ifInfo.ContainerVethName
+		endpointInfo.Data[network.PreCreatedHostRoutesKey] = opt.ifInfo.HostRoutesPreCreated
+	}
+
 	logger.Info("Generated endpoint info from fields", zap.String("epInfo", endpointInfo.PrettyString()))
 
 	// now our ep info should have the full combined information from both the network and endpoint structs

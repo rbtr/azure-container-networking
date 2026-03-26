@@ -44,6 +44,7 @@ type TransparentEndpointClient struct {
 	netioshim         netio.NetIOInterface
 	plClient          platform.ExecClient
 	netUtilsClient    networkutils.NetworkUtils
+	preCreated        bool // true when veth was pre-created by the CNS veth pool
 
 	// Batch state for reducing RTNL lock contention. Populated in
 	// AddEndpoints and flushed in MoveEndpointsToContainerNS so that
@@ -78,6 +79,11 @@ func NewTransparentEndpointClient(
 		netUtilsClient:    networkutils.NewNetworkUtils(nl, plc),
 	}
 
+	// Check if this is a pre-created veth from the pool.
+	if _, err := nioc.GetNetworkInterfaceByName(hostVethName); err == nil {
+		client.preCreated = true
+	}
+
 	return client
 }
 
@@ -88,6 +94,25 @@ func (client *TransparentEndpointClient) setArpProxy(ifName string) error {
 }
 
 func (client *TransparentEndpointClient) AddEndpoints(epInfo *EndpointInfo) error {
+	// Pre-created veth from pool: skip creation, just collect interface info.
+	if client.preCreated {
+		containerIf, err := client.netioshim.GetNetworkInterfaceByName(client.containerVethName)
+		if err != nil {
+			return newErrorTransparentEndpointClient(err)
+		}
+		client.containerMac = containerIf.HardwareAddr
+		client.containerIfIndex = containerIf.Index
+
+		hostIf, err := client.netioshim.GetNetworkInterfaceByName(client.hostVethName)
+		if err != nil {
+			return newErrorTransparentEndpointClient(err)
+		}
+		client.hostVethMac = hostIf.HardwareAddr
+		client.hostIfIndex = hostIf.Index
+		// No batch needed — veth is already UP with MTU set by the pool.
+		return nil
+	}
+
 	if _, err := client.netioshim.GetNetworkInterfaceByName(client.hostVethName); err == nil {
 		logger.Info("Deleting old host veth", zap.String("hostVethName", client.hostVethName))
 		if err = client.netlink.DeleteLink(client.hostVethName); err != nil {
@@ -165,6 +190,21 @@ func (client *TransparentEndpointClient) AddEndpoints(epInfo *EndpointInfo) erro
 }
 
 func (client *TransparentEndpointClient) AddEndpointRules(epInfo *EndpointInfo) error {
+	// If host routes were pre-created by CNS, skip route addition but still
+	// set the ARP proxy (it's a proc write, not persisted by the pool).
+	if preRoutes, ok := epInfo.Data[PreCreatedHostRoutesKey]; ok {
+		if pre, _ := preRoutes.(bool); pre {
+			logger.Info("Skipping route addition — host routes pre-created by CNS",
+				zap.String("hostVethName", client.hostVethName))
+			logger.Info("calling setArpProxy for", zap.String("hostVethName", client.hostVethName))
+			if err := client.setArpProxy(client.hostVethName); err != nil {
+				logger.Error("setArpProxy failed with", zap.Error(err))
+				return err
+			}
+			return nil
+		}
+	}
+
 	var routeInfoList []RouteInfo
 
 	// ip route add <podip> dev <hostveth>

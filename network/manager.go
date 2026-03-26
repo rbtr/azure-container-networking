@@ -25,15 +25,18 @@ import (
 
 const (
 	// Network store key.
-	storeKey             = "Network"
-	VlanIDKey            = "VlanID"
-	AzureCNS             = "azure-cns"
-	SNATIPKey            = "NCPrimaryIPKey"
-	RoutesKey            = "RoutesKey"
-	IPTablesKey          = "IPTablesKey"
-	genericData          = "com.docker.network.generic"
-	ipv6AddressMask      = 128
-	cnsBaseURL           = "" // fallback to default http://localhost:10090
+	storeKey                   = "Network"
+	VlanIDKey                  = "VlanID"
+	PreCreatedHostVethKey      = "preCreatedHostVeth"
+	PreCreatedContainerVethKey = "preCreatedContainerVeth"
+	PreCreatedHostRoutesKey    = "preCreatedHostRoutes"
+	AzureCNS                   = "azure-cns"
+	SNATIPKey                  = "NCPrimaryIPKey"
+	RoutesKey                  = "RoutesKey"
+	IPTablesKey                = "IPTablesKey"
+	genericData                = "com.docker.network.generic"
+	ipv6AddressMask            = 128
+	cnsBaseURL                 = "" // fallback to default http://localhost:10090
 	cnsReqTimeout        = 15 * time.Second
 	StateLessCNIIsNotSet = "StateLess CNI mode is not enabled"
 	InfraInterfaceName   = "eth0"

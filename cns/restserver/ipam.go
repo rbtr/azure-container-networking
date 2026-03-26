@@ -84,6 +84,11 @@ func (service *HTTPRestService) requestIPConfigHandlerHelper(ctx context.Context
 		}, err
 	}
 
+	// Try to assign pre-created veth pairs and add host routes.
+	if service.vethPool != nil {
+		service.assignVethPairs(podIPInfo)
+	}
+
 	// record a pod assigned an IP
 	defer func() {
 		// observe IP assignment wait time

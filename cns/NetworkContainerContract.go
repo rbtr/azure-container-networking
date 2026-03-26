@@ -530,6 +530,13 @@ type PodIpInfo struct {
 	AllowNCToHostCommunication bool
 	// NetworkContainerID is the ID of the network container to which this Pod IP belongs
 	NetworkContainerID string
+	// Pre-created veth pair info from the veth pool. If HostVethName is non-empty,
+	// the CNI should reuse this veth pair instead of creating a new one.
+	HostVethName      string `json:",omitempty"`
+	ContainerVethName string `json:",omitempty"`
+	// HostRoutesPreCreated indicates that host-side routes for this IP were already
+	// added by CNS. The CNI should skip AddEndpointRules for this endpoint.
+	HostRoutesPreCreated bool `json:",omitempty"`
 }
 
 type HostIPInfo struct {

@@ -85,7 +85,11 @@ func (nw *network) newEndpointImpl(
 		}
 	}
 
-	if _, ok := epInfo.Data[OptVethName]; ok {
+	if _, ok := epInfo.Data[PreCreatedHostVethKey]; ok {
+		// Use exact names from the pre-created veth pool (no hashing or prefix).
+		hostIfName = epInfo.Data[PreCreatedHostVethKey].(string)
+		contIfName = epInfo.Data[PreCreatedContainerVethKey].(string)
+	} else if _, ok := epInfo.Data[OptVethName]; ok {
 		key := epInfo.Data[OptVethName].(string)
 		logger.Info("Generate veth name based on the key provided", zap.String("key", key))
 		vethname := generateVethName(key)

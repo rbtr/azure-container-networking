@@ -214,6 +214,15 @@ func (invoker *CNSIPAMInvoker) Add(addConfig IPAMAddConfig) (IPAMAddResult, erro
 			if err := configureDefaultAddResult(&info, &addConfig, &addResult, overlayMode, key); err != nil {
 				return IPAMAddResult{}, err
 			}
+
+			// Propagate pre-created veth pair info from CNS.
+			if response.PodIPInfo[i].HostVethName != "" {
+				ifInfo := addResult.interfaceInfo[key]
+				ifInfo.HostVethName = response.PodIPInfo[i].HostVethName
+				ifInfo.ContainerVethName = response.PodIPInfo[i].ContainerVethName
+				ifInfo.HostRoutesPreCreated = response.PodIPInfo[i].HostRoutesPreCreated
+				addResult.interfaceInfo[key] = ifInfo
+			}
 		default:
 			logger.Warn("Unknown NIC type received from cns pod ip info", zap.String("nicType", string(info.nicType)))
 		}

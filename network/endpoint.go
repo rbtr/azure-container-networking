@@ -143,6 +143,10 @@ type InterfaceInfo struct {
 	NetworkContainerID         string
 	AllowNCToHostCommunication bool
 	AllowHostToNCCommunication bool
+	// Pre-created veth pair from the CNS veth pool.
+	HostVethName         string
+	ContainerVethName    string
+	HostRoutesPreCreated bool
 }
 
 type IPConfig struct {

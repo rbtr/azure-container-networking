@@ -19,6 +19,7 @@ import (
 	cnsstore "github.com/Azure/azure-container-networking/cns/store"
 	"github.com/Azure/azure-container-networking/cns/types"
 	"github.com/Azure/azure-container-networking/cns/types/bounded"
+	"github.com/Azure/azure-container-networking/cns/vethpool"
 	"github.com/Azure/azure-container-networking/cns/wireserver"
 	acn "github.com/Azure/azure-container-networking/common"
 	nma "github.com/Azure/azure-container-networking/nmagent"
@@ -101,6 +102,7 @@ type HTTPRestService struct {
 	generateCNIConflistOnce    sync.Once
 	IPConfigsHandlerMiddleware cns.IPConfigsHandlerMiddleware
 	ipamSemaphore              *ipamSemaphore // limits concurrent IPAM operations; nil disables
+	vethPool                   *vethpool.Pool
 	PnpIDByMacAddress          map[string]string
 	imdsClient                 imdsClient
 	nodesubnetIPFetcher        *nodesubnet.IPFetcher
@@ -410,9 +412,27 @@ func (service *HTTPRestService) SetIPAMConcurrencyLimit(maxConcurrent int) {
 	service.ipamSemaphore = newIPAMSemaphore(maxConcurrent)
 }
 
-// Close cleanly shuts down the endpoint store.
+// StartVethPool initializes and starts the veth pool with the given parameters.
+// Called after CNS is fully initialized and knows the host interface MTU.
+func (service *HTTPRestService) StartVethPool(ctx context.Context, mtu, poolSize int) {
+	if poolSize <= 0 {
+		return
+	}
+	pool := vethpool.New(mtu, poolSize)
+	if err := pool.Start(ctx); err != nil {
+		logger.Errorf("Failed to start veth pool: %v", err)
+		return
+	}
+	service.vethPool = pool
+	logger.Printf("Veth pool started: poolSize=%d mtu=%d", poolSize, mtu)
+}
+
+// Close cleanly shuts down the endpoint store and veth pool.
 // It should be called when the service is stopping.
 func (service *HTTPRestService) Close() {
+	if service.vethPool != nil {
+		service.vethPool.Close()
+	}
 	if service.endpointStore != nil {
 		service.endpointStore.Close() //nolint:errcheck // best-effort at shutdown
 	}
