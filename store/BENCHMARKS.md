@@ -218,3 +218,19 @@ concurrent write contention that characterizes real-world pod scheduling.
 
 The migration path is straightforward since BoltDB implements the same
 `KeyValueStore` interface — it is a drop-in replacement at the constructor level.
+
+---
+
+## Update: Per-Record Bolt Store (cns/store)
+
+> **This document covers the old KV-wrapper benchmarks** where bolt still
+> serialized the entire endpoint map as a single value. A new per-record model
+> in `cns/store/` goes further — each endpoint is an independent key in a bolt
+> bucket, so mutations touch only the affected record.
+>
+> Per-record bolt results at 250 endpoints:
+> - **11× faster** than JSON whole-map writes (34 µs vs 387 µs)
+> - **O(1) write time** regardless of state size (constant ~33 µs)
+> - **11× fewer allocations** per write (114 vs 1,259)
+>
+> See **`cns/store/BENCHMARKS.md`** for full per-record benchmark data.

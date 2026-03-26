@@ -142,12 +142,72 @@ The micro-benchmarks are correct — BoltDB really is 4–8× faster for isolate
 
 ---
 
+## Follow-Up: Per-Record Bolt Store (Phase 2)
+
+After the initial cluster benchmarks confirmed the store isn't the pod startup
+bottleneck, we pursued the boltdb migration for its engineering benefits. The
+original benchmarks used a **whole-map KV wrapper** — every write still
+serialized the entire endpoint map into a single bolt value. Phase 2 implements
+a **per-record** model where each endpoint is an independent key in a bolt
+bucket, so mutations touch only the affected record.
+
+### Per-Record Bolt vs JSON Whole-Map: Adding One Endpoint
+
+This is the IPAM hot path — every `RequestIPConfigs` writes one endpoint.
+
+| Existing Endpoints | JSON whole-map (µs) | Bolt per-record (µs) | Speedup |
+|-------------------:|--------------------:|---------------------:|--------:|
+| 50                 |                  91 |                   33 |  **2.8×** |
+| 100                |                 165 |                   33 |  **5.0×** |
+| 250                |                 387 |                   34 |  **11×**  |
+| 500                |                 753 |                   33 |  **23×**  |
+
+Bolt per-record write is **O(1)** (~33 µs constant) regardless of state size.
+JSON is **O(n)** (linear with endpoint count).
+
+### Concurrent Writes (250 Endpoints, JSON+Mutex vs Bolt Per-Record)
+
+| Goroutines | JSON + Mutex (µs/op) | Bolt per-record (µs/op) | Speedup |
+|-----------:|---------------------:|------------------------:|--------:|
+| 4          |                  432 |                      28 |  **15×** |
+| 8          |                  430 |                      31 |  **14×** |
+| 16         |                  430 |                      35 |  **12×** |
+| 32         |                  433 |                      33 |  **13×** |
+
+### Memory Efficiency (per write, 250 endpoints)
+
+| Metric      | JSON whole-map | Bolt per-record |
+|-------------|---------------:|----------------:|
+| Bytes/op    |       107 KB   |          18 KB  |
+| Allocs/op   |        1,259   |            114  |
+
+### Impact Assessment
+
+At 250 endpoints, the per-record model saves ~353 µs per IP assignment and
+reduces GC allocation pressure by 11×. While this remains a small fraction of
+total pod startup time (see the waterfall above), the improvement:
+
+- **Eliminates write amplification** — no more rewriting 250 records to change 1
+- **Removes external mutex** — bolt transactions provide isolation
+- **Scales to larger nodes** — write time stays constant at 500+ endpoints
+- **Reduces GC pressure** — 11× fewer allocations per write
+
+Full methodology and raw data: `cns/store/BENCHMARKS.md`
+
+---
+
 ## Reproduction
 
-### Micro-benchmarks
+### Micro-benchmarks (old KV-wrapper model)
 ```bash
 cd store/
 go test -bench=. -benchmem -count=3 -timeout=10m ./...
+```
+
+### Micro-benchmarks (new per-record bolt model)
+```bash
+cd cns/store/
+go test -bench=. -benchmem -count=3 -timeout=180s ./...
 ```
 
 ### Cluster benchmarks
@@ -170,13 +230,14 @@ Results are written to `./results/<sku>/` as JSON files, a CSV, and a SUMMARY.md
 
 | File | Description |
 |------|-------------|
-| `store/bolt.go` | BoltDB `KeyValueStore` implementation |
-| `store/sqlite.go` | SQLite `KeyValueStore` implementation |
+| `store/bolt.go` | BoltDB `KeyValueStore` (old KV-wrapper) |
+| `store/sqlite.go` | SQLite `KeyValueStore` |
 | `store/factory.go` | Backend factory (`NewStore()`) |
-| `store/store_bench_test.go` | Micro-benchmark suite |
-| `store/BENCHMARKS.md` | Micro-benchmark documentation |
-| `cns/configuration/configuration.go` | `StoreBackend` config field |
-| `cns/service/main.go` | Runtime backend selection |
+| `store/store_bench_test.go` | Old KV-wrapper benchmark suite |
+| `store/BENCHMARKS.md` | Old KV-wrapper benchmark documentation |
+| `cns/store/bolt.go` | Per-record NCBoltStore & EndpointBoltStore |
+| `cns/store/bolt_bench_test.go` | Per-record benchmark suite |
+| `cns/store/BENCHMARKS.md` | Per-record benchmark documentation |
+| `cns/restserver/endpointwriter.go` | Async per-record endpoint writer |
 | `test/integration/storebench/storebench_test.go` | Cluster benchmark harness |
-| `test/integration/storebench/results/b2s/` | Standard_B2s results |
-| `test/integration/storebench/results/d8adsv7/` | Standard_D8ads_v7 results |
+| `test/integration/storebench/results/` | Cluster benchmark results |

@@ -36,8 +36,12 @@ cns/store/
 ├── types.go            # Record types (NCRecord, IPRecord, EndpointRecord, etc.)
 ├── bolt.go             # NCBoltStore & EndpointBoltStore implementations
 ├── bolt_test.go        # Tests for both stores
+├── bolt_bench_test.go  # Benchmarks: JSON whole-map vs bolt per-record
 ├── migration.go        # MigrateCNSState & MigrateEndpointState
-└── migration_test.go   # Migration tests using real JSON fixtures
+├── migration_test.go   # Migration tests using real JSON fixtures
+├── BENCHMARKS.md       # Benchmark methodology, results, and analysis
+├── README.md           # This file
+└── benchmarks/         # Raw benchmark output files
 ```
 
 ### Stores
@@ -92,17 +96,20 @@ Post-disruption, CNS state and actual pod IPs may temporarily disagree. The test
 |-----------|--------|-------------|
 | Bolt store implementation | ✅ Done | `cns/store/` package with NCBoltStore, EndpointBoltStore, full CRUD |
 | Migration from JSON | ✅ Done | `MigrateCNSState`, `MigrateEndpointState` with idempotent marker system |
-| Test hardening (state validation) | ✅ Proposed upstream | Convergence loop, detailed IP comparison, summary emission, baseline regression detection |
+| Runtime integration | ✅ Done | EndpointBoltStore wired into CNS restserver, replacing JSON endpoint store |
+| Per-record async writes | ✅ Done | `endpointWriter` does PutEndpoint/DeleteEndpoint per container (not whole-map) |
+| Benchmarks | ✅ Done | Per-record bolt is 11–23× faster than JSON whole-map writes (see `BENCHMARKS.md`) |
+| Test hardening (state validation) | ✅ Proposed upstream | Convergence loop, detailed IP comparison, summary emission |
 | E2E validation pipeline (M0) | ✅ In follow up | JSON-baseline lanes with state validation after each disruption |
 | Pipeline migration lanes (M1-M3) | 🔧 In bolt branch | Full matrix across modes × disruptions × topologies |
-| Runtime integration | ❌ Not started | Wire bolt stores into CNS restserver startup, replacing json file store |
+| NC state store migration | 🔧 Planned | Wire NCBoltStore into main CNS state path (lower priority — not IPAM hot path) |
 | Gradual rollout | ❌ Not started | Feature flag in cns_config.json, staged AKS rollout |
 
 ### Remaining work
 
-1. **Runtime integration**: Replace the JSON file store calls in `cns/restserver/` with bolt store calls. This is the point where CNS actually starts using boltdb in production. Requires careful wiring around initialization order and the existing `Store` interface in `store/` (the old package — not this one).
+1. **NC state store migration**: Wire `NCBoltStore` into the main CNS state path (`saveState`/`restoreState` in `cns/restserver/util.go`). This is lower priority because the NC state write is not on the IPAM hot path — it only fires during NC creation/deletion, not per-pod IP assignment.
 
-2. **Pipeline M1-M3 lanes**: The `set-cns-state-mode-template.yaml` patches the CNS configmap to enable migration mode. The `cniv2-template.yaml` has the `state_matrix_guard` job that enforces mode coverage. These are staged in the bolt branch pending the runtime integration.
+2. **Pipeline M1-M3 lanes**: The `set-cns-state-mode-template.yaml` patches the CNS configmap to enable migration mode. The `cniv2-template.yaml` has the `state_matrix_guard` job that enforces mode coverage. These are staged in the bolt branch pending the E2E validation.
 
 3. **Feature flag & gradual rollout**: A config knob (`stateStoreBackend: "bolt"`) in cns_config.json to control which nodes use the new store. Initial rollout targets canary rings before broad enablement.
 
