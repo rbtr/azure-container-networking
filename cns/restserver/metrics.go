@@ -112,10 +112,10 @@ var (
 		[]string{},
 	)
 
-	asyncEndpointWriteFailures = prometheus.NewCounter(
+	endpointWriteFailures = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "async_endpoint_write_failures_total",
-			Help: "Total number of failed async endpoint state writes",
+			Name: "endpoint_write_failures_total",
+			Help: "Total number of failed endpoint state writes to bolt",
 		},
 	)
 
@@ -148,7 +148,7 @@ func init() {
 		availableIPCount,
 		pendingProgrammingIPCount,
 		pendingReleaseIPCount,
-		asyncEndpointWriteFailures,
+		endpointWriteFailures,
 		ipamConcurrencyQueueDepth,
 		ipamConcurrencyWaitTime,
 	)

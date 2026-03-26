@@ -11,92 +11,33 @@ import (
 	cnsstore "github.com/Azure/azure-container-networking/cns/store"
 )
 
-// endpointWriter provides async per-record writes of endpoint state to a
-// boltdb EndpointBoltStore. In-memory mutations happen under the caller's
-// lock; the I/O is serialised through a buffered channel so the service
-// lock is never held during disk writes.
-//
-// Each operation (put or delete) targets a single container ID, so boltdb
-// only touches one key per write instead of rewriting the entire map.
-type endpointWriter struct {
-	store *cnsstore.EndpointBoltStore
-	ops   chan endpointOp
-	done  chan struct{}
-}
-
-type endpointOpKind int
-
-const (
-	opPut endpointOpKind = iota
-	opDelete
-)
-
-type endpointOp struct {
-	kind        endpointOpKind
-	containerID string
-	record      cnsstore.EndpointRecord // only used for opPut
-}
-
-const endpointOpBufSize = 256
-
-func newEndpointWriter(s *cnsstore.EndpointBoltStore) *endpointWriter {
-	w := &endpointWriter{
-		store: s,
-		ops:   make(chan endpointOp, endpointOpBufSize),
-		done:  make(chan struct{}),
+// persistEndpoint synchronously writes a single endpoint record to bolt.
+// Must be called while endpointStateMu is held to prevent races between
+// the in-memory state read and the bolt write.
+func (service *HTTPRestService) persistEndpoint(containerID string, info *EndpointInfo) error {
+	if service.endpointStore == nil {
+		return nil
 	}
-	go w.loop()
-	return w
-}
-
-// PutEndpoint enqueues an async put for a single container endpoint.
-// The EndpointInfo is deep-copied and converted to an EndpointRecord
-// so the caller can continue mutating in-memory state without races.
-func (w *endpointWriter) PutEndpoint(containerID string, info *EndpointInfo) {
-	w.ops <- endpointOp{
-		kind:        opPut,
-		containerID: containerID,
-		record:      endpointInfoToRecord(info),
+	rec := endpointInfoToRecord(info)
+	if err := service.endpointStore.PutEndpoint(context.Background(), containerID, rec); err != nil {
+		logger.Errorf("[persistEndpoint] sync put for %s failed: %v", containerID, err)
+		endpointWriteFailures.Inc()
+		return err
 	}
+	return nil
 }
 
-// DeleteEndpoint enqueues an async delete for a single container endpoint.
-func (w *endpointWriter) DeleteEndpoint(containerID string) {
-	w.ops <- endpointOp{
-		kind:        opDelete,
-		containerID: containerID,
+// deletePersistedEndpoint synchronously removes a single endpoint record from bolt.
+func (service *HTTPRestService) deletePersistedEndpoint(containerID string) error {
+	if service.endpointStore == nil {
+		return nil
 	}
-}
-
-func (w *endpointWriter) loop() {
-	defer close(w.done)
-	for op := range w.ops {
-		ctx := context.Background()
-		var err error
-		switch op.kind {
-		case opPut:
-			err = w.store.PutEndpoint(ctx, op.containerID, op.record)
-		case opDelete:
-			err = w.store.DeleteEndpoint(ctx, op.containerID)
-		}
-		if err != nil {
-			logger.Errorf("[endpointWriter] async %s for %s failed: %v", opName(op.kind), op.containerID, err)
-			asyncEndpointWriteFailures.Inc()
-		}
+	if err := service.endpointStore.DeleteEndpoint(context.Background(), containerID); err != nil {
+		logger.Errorf("[deletePersistedEndpoint] sync delete for %s failed: %v", containerID, err)
+		endpointWriteFailures.Inc()
+		return err
 	}
-}
-
-// Close drains pending operations and stops the background goroutine.
-func (w *endpointWriter) Close() {
-	close(w.ops)
-	<-w.done
-}
-
-func opName(k endpointOpKind) string {
-	if k == opDelete {
-		return "delete"
-	}
-	return "put"
+	return nil
 }
 
 // endpointInfoToRecord converts the restserver EndpointInfo to the

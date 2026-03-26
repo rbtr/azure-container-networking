@@ -20,9 +20,12 @@ func openTestEndpointStore(t *testing.T) *cnsstore.EndpointBoltStore {
 	return s
 }
 
-func TestEndpointWriter_PutAndClose(t *testing.T) {
+func TestPersistEndpoint_PutAndGet(t *testing.T) {
 	s := openTestEndpointStore(t)
-	w := newEndpointWriter(s)
+	svc := &HTTPRestService{
+		endpointStore: s,
+		EndpointState: make(map[string]*EndpointInfo),
+	}
 
 	info := &EndpointInfo{
 		PodName:      "pod1",
@@ -31,9 +34,10 @@ func TestEndpointWriter_PutAndClose(t *testing.T) {
 			"eth0": {IPv4: []net.IPNet{{IP: net.IPv4(10, 0, 0, 1), Mask: net.IPv4Mask(255, 255, 255, 0)}}},
 		},
 	}
+	svc.EndpointState["abc123"] = info
 
-	w.PutEndpoint("abc123", info)
-	w.Close() // blocks until write completes
+	err := svc.persistEndpoint("abc123", info)
+	require.NoError(t, err)
 
 	// Verify the record was persisted
 	rec, err := s.GetEndpoint(context.Background(), "abc123")
@@ -43,41 +47,36 @@ func TestEndpointWriter_PutAndClose(t *testing.T) {
 	assert.Len(t, rec.IfnameToIPMap["eth0"].IPv4, 1)
 }
 
-func TestEndpointWriter_DeleteAndClose(t *testing.T) {
+func TestDeletePersistedEndpoint(t *testing.T) {
 	s := openTestEndpointStore(t)
+	svc := &HTTPRestService{
+		endpointStore: s,
+		EndpointState: make(map[string]*EndpointInfo),
+	}
 
 	// Pre-populate
 	err := s.PutEndpoint(context.Background(), "ctr1", cnsstore.EndpointRecord{PodName: "pod1"})
 	require.NoError(t, err)
 
-	w := newEndpointWriter(s)
-	w.DeleteEndpoint("ctr1")
-	w.Close()
+	err = svc.deletePersistedEndpoint("ctr1")
+	require.NoError(t, err)
 
 	_, err = s.GetEndpoint(context.Background(), "ctr1")
 	assert.ErrorIs(t, err, cnsstore.ErrNotFound)
 }
 
-func TestEndpointWriter_DeepCopiesState(t *testing.T) {
-	s := openTestEndpointStore(t)
-	w := newEndpointWriter(s)
-
-	info := &EndpointInfo{
-		PodName:       "pod1",
-		PodNamespace:  "ns1",
-		IfnameToIPMap: map[string]*IPInfo{"eth0": {IPv4: []net.IPNet{{IP: net.IPv4(10, 0, 0, 1), Mask: net.IPv4Mask(255, 255, 255, 0)}}}},
+func TestPersistEndpoint_NilStore(t *testing.T) {
+	svc := &HTTPRestService{
+		endpointStore: nil,
+		EndpointState: make(map[string]*EndpointInfo),
 	}
 
-	w.PutEndpoint("ctr1", info)
+	// Should be a no-op when store is nil
+	err := svc.persistEndpoint("ctr1", &EndpointInfo{PodName: "pod1"})
+	assert.NoError(t, err)
 
-	// Mutate the original after PutEndpoint returns
-	info.PodName = "MUTATED"
-
-	w.Close()
-
-	rec, err := s.GetEndpoint(context.Background(), "ctr1")
-	require.NoError(t, err)
-	assert.Equal(t, "pod1", rec.PodName, "persisted record should not reflect mutation")
+	err = svc.deletePersistedEndpoint("ctr1")
+	assert.NoError(t, err)
 }
 
 func TestIPAMSemaphore_Disabled(t *testing.T) {

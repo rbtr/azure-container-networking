@@ -402,11 +402,9 @@ func (service *HTTPRestService) updateEndpointState(ipconfigsRequest cns.IPConfi
 		}
 	}
 
-	// Persist asynchronously — the in-memory state is authoritative.
-	if service.endpointWriter != nil {
-		service.endpointWriter.PutEndpoint(ipconfigsRequest.InfraContainerID, service.EndpointState[ipconfigsRequest.InfraContainerID])
-	}
-	return nil
+	// Persist synchronously — must complete before we return the response to
+	// the CNI, so that a crash cannot lose the assignment.
+	return service.persistEndpoint(ipconfigsRequest.InfraContainerID, service.EndpointState[ipconfigsRequest.InfraContainerID])
 }
 
 // ReleaseIPConfigHandlerHelper validates the request and removes the endpoint associated with the pod
@@ -559,8 +557,8 @@ func (service *HTTPRestService) removeEndpointState(podInfo cns.PodInfo) error {
 	logger.Printf("[removeEndpointState] Removing endpoint state for infra container %s", podInfo.InfraContainerID())
 	if _, ok := service.EndpointState[podInfo.InfraContainerID()]; ok {
 		delete(service.EndpointState, podInfo.InfraContainerID())
-		if service.endpointWriter != nil {
-			service.endpointWriter.DeleteEndpoint(podInfo.InfraContainerID())
+		if err := service.deletePersistedEndpoint(podInfo.InfraContainerID()); err != nil {
+			return err
 		}
 	} else { // will not fail if no endpoint state for infra container id is found
 		logger.Printf("[removeEndpointState] No endpoint state found for infra container %s", podInfo.InfraContainerID())
@@ -1259,8 +1257,8 @@ func (service *HTTPRestService) DeleteEndpointStateHelper(endpointID string) err
 	// Delete the endpoint from the state
 	delete(service.EndpointState, endpointID)
 
-	if service.endpointWriter != nil {
-		service.endpointWriter.DeleteEndpoint(endpointID)
+	if err := service.deletePersistedEndpoint(endpointID); err != nil {
+		return err
 	}
 	logger.Printf("[deleteEndpointState] successfully deleted endpoint %s from state file", endpointID) //nolint:staticcheck // reason: using deprecated call until migration to new API
 	return nil
@@ -1401,8 +1399,8 @@ func (service *HTTPRestService) UpdateEndpointHelper(endpointID string, req map[
 		// updating the ipInfoMap
 		updateIPInfoMap(endpointInfo.IfnameToIPMap, interfaceInfo, ifName, endpointID)
 	}
-	if service.endpointWriter != nil {
-		service.endpointWriter.PutEndpoint(endpointID, service.EndpointState[endpointID])
+	if err := service.persistEndpoint(endpointID, service.EndpointState[endpointID]); err != nil {
+		return err
 	}
 	logger.Printf("[updateEndpoint] successfully write the state to the file %s", endpointID)
 	return nil

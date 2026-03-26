@@ -99,7 +99,6 @@ type HTTPRestService struct {
 	EndpointState              map[string]*EndpointInfo // key : container id
 	endpointStateMu            sync.RWMutex             // protects EndpointState map independently of IP pool lock
 	endpointStore              *cnsstore.EndpointBoltStore
-	endpointWriter             *endpointWriter // async, per-record endpoint state persistence
 	cniConflistGenerator       CNIConflistGenerator
 	generateCNIConflistOnce    sync.Once
 	IPConfigsHandlerMiddleware cns.IPConfigsHandlerMiddleware
@@ -260,9 +259,6 @@ func NewHTTPRestService(config *common.ServiceConfig, wscli interfaceGetter, wsp
 		imdsClient:               imdsClient,
 		ipamSemaphore:            newIPAMSemaphore(0), // disabled by default; set via SetIPAMConcurrencyLimit
 	}
-	if endpointStore != nil {
-		svc.endpointWriter = newEndpointWriter(endpointStore)
-	}
 	return svc, nil
 }
 
@@ -417,12 +413,9 @@ func (service *HTTPRestService) SetIPAMConcurrencyLimit(maxConcurrent int) {
 	service.ipamSemaphore = newIPAMSemaphore(maxConcurrent)
 }
 
-// Close cleanly shuts down background goroutines (e.g. the async endpoint
-// state writer). It should be called when the service is stopping.
+// Close cleanly shuts down the endpoint store.
+// It should be called when the service is stopping.
 func (service *HTTPRestService) Close() {
-	if service.endpointWriter != nil {
-		service.endpointWriter.Close()
-	}
 	if service.endpointStore != nil {
 		service.endpointStore.Close() //nolint:errcheck // best-effort at shutdown
 	}
