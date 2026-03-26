@@ -345,6 +345,9 @@ func (service *HTTPRestService) addIPConfigStateUntransacted(ncID string, hostVe
 		logger.Printf("[Azure-Cns] Add IP %s as %s", ipconfig.IPAddress, newIPCNSStatus)
 
 		service.PodIPConfigState[ipID] = ipconfigStatus
+		if newIPCNSStatus == types.Available {
+			service.availableIPPool.Push(ipPoolKeyFromIP(ipconfigStatus), ipID)
+		}
 
 		// Todo Update batch API and maintain the count
 	}
@@ -378,6 +381,10 @@ func (service *HTTPRestService) removeToBeDeletedIPStateUntransacted(
 		}
 	}
 
+	// Remove from available pool if the IP was Available
+	if ipConfig, exists := service.PodIPConfigState[ipID]; exists && ipConfig.GetState() == types.Available {
+		service.availableIPPool.Remove(ipID)
+	}
 	// Delete this ip from PODIpConfigState Map
 	logger.Printf("[Azure-Cns] Delete the PodIpConfigState, IpId: %s, IPConfigStatus: %v",
 		ipID,

@@ -89,6 +89,7 @@ type HTTPRestService struct {
 	networkContainer         *networkcontainers.NetworkContainers
 	PodIPIDByPodInterfaceKey map[string][]string                  // PodInterfaceId is key and value is slice of Pod IP (SecondaryIP) uuids.
 	PodIPConfigState         map[string]cns.IPConfigurationStatus // Secondary IP ID(uuid) is key
+	availableIPPool          *ipPool                              // O(1) available IP lookup, keyed by NC×family
 	routingTable             *routes.RoutingTable
 	store                    store.KeyValueStore
 	state                    *httpRestServiceState
@@ -248,6 +249,7 @@ func NewHTTPRestService(config *common.ServiceConfig, wscli interfaceGetter, wsp
 		networkContainer:         nc,
 		PodIPIDByPodInterfaceKey: podIPIDByPodInterfaceKey,
 		PodIPConfigState:         podIPConfigState,
+		availableIPPool:          newIPPool(),
 		routingTable:             routingTable,
 		state:                    serviceState,
 		podsPendingIPAssignment:  bounded.NewTimedSet(250), // nolint:gomnd // maxpods

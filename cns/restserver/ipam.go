@@ -590,19 +590,21 @@ func (service *HTTPRestService) MarkIPAsPendingRelease(totalIpsToRelease int) (m
 		}
 	}
 
-	// if not all expected IPs are set to PendingRelease, then check the Available IPs
-	for uuid, existingIpConfig := range service.PodIPConfigState {
-		if existingIpConfig.GetState() == types.Available {
-			updatedIPConfig, err := service.updateIPConfigState(uuid, types.PendingRelease, existingIpConfig.PodInfo)
+	// if not all expected IPs are set to PendingRelease, then drain Available IPs from the pool
+	remaining := totalIpsToRelease - len(pendingReleasedIps)
+	for key := range service.availableIPPool.stacks {
+		if remaining <= 0 {
+			break
+		}
+		ids := service.availableIPPool.PopN(key, remaining)
+		for _, ipID := range ids {
+			updatedIPConfig, err := service.updateIPConfigState(ipID, types.PendingRelease, service.PodIPConfigState[ipID].PodInfo)
 			if err != nil {
+				service.availableIPPool.Push(key, ipID)
 				return nil, err
 			}
-
-			pendingReleasedIps[uuid] = updatedIPConfig
-
-			if len(pendingReleasedIps) == totalIpsToRelease {
-				return pendingReleasedIps, nil
-			}
+			pendingReleasedIps[ipID] = updatedIPConfig
+			remaining--
 		}
 	}
 
@@ -637,19 +639,20 @@ func (service *HTTPRestService) MarkNIPsPendingRelease(n int) (map[string]cns.IP
 		}
 	}
 
-	// try to release from Available
+	// try to release from Available using pool
 	availableIPs := make(map[string]cns.IPConfigurationStatus)
-	for uuid, ipConfig := range service.PodIPConfigState { //nolint:gocritic // intentional value copy
+	for key := range service.availableIPPool.stacks {
 		if n <= 0 {
 			break
 		}
-		if ipConfig.GetState() == types.Available {
-			updatedIPConfig, err := service.updateIPConfigState(uuid, types.PendingRelease, ipConfig.PodInfo)
+		ids := service.availableIPPool.PopN(key, n)
+		for _, ipID := range ids {
+			updatedIPConfig, err := service.updateIPConfigState(ipID, types.PendingRelease, service.PodIPConfigState[ipID].PodInfo)
 			if err != nil {
+				service.availableIPPool.Push(key, ipID)
 				return nil, err
 			}
-
-			availableIPs[uuid] = updatedIPConfig
+			availableIPs[ipID] = updatedIPConfig
 			n--
 		}
 	}
@@ -666,6 +669,7 @@ func (service *HTTPRestService) MarkNIPsPendingRelease(n int) (map[string]cns.IP
 	}
 	for uuid, ipConfig := range availableIPs { //nolint:gocritic // intentional value copy
 		_, _ = service.updateIPConfigState(uuid, types.Available, ipConfig.PodInfo)
+		service.availableIPPool.Push(ipPoolKeyFromIP(ipConfig), uuid)
 	}
 	return nil, errors.New("unable to release requested number of IPs")
 }
@@ -702,9 +706,11 @@ func (service *HTTPRestService) MarkIpsAsAvailableUntransacted(ncID string, newH
 				if ipConfigStatus, exist := service.PodIPConfigState[uuid]; !exist {
 					logger.Errorf("IP %s with uuid as %s exist in service state Secondary IP list but can't find in PodIPConfigState", ipConfigStatus.IPAddress, uuid)
 				} else if ipConfigStatus.GetState() == types.PendingProgramming && secondaryIPConfigs.NCVersion <= newHostNCVersion {
-					_, err := service.updateIPConfigState(uuid, types.Available, nil)
+					updatedIP, err := service.updateIPConfigState(uuid, types.Available, nil)
 					if err != nil {
 						logger.Errorf("Error updating IPConfig [%+v] state to Available, err: %+v", ipConfigStatus, err)
+					} else {
+						service.availableIPPool.Push(ipPoolKeyFromIP(updatedIP), uuid)
 					}
 
 					// Following 2 sentence assign new host version to secondary ip config.
@@ -830,6 +836,7 @@ func (service *HTTPRestService) unassignIPConfig(ipconfig cns.IPConfigurationSta
 		return cns.IPConfigurationStatus{}, err
 	}
 
+	service.availableIPPool.Push(ipPoolKeyFromIP(ipconfig), ipconfig.ID)
 	delete(service.PodIPIDByPodInterfaceKey, podInfo.Key())
 	logger.Printf("[setIPConfigAsAvailable] Deleted outdated pod info %s from PodIPIDByOrchestratorContext since IP %s with ID %s will be released and set as Available",
 		podInfo.Key(), ipconfig.IPAddress, ipconfig.ID)
@@ -895,6 +902,9 @@ func (service *HTTPRestService) MarkExistingIPsAsPendingRelease(pendingIPIDs []s
 				return errors.Errorf("Failed to mark IP [%v] as pending, currently assigned", id)
 			}
 
+			if ipconfig.GetState() == types.Available {
+				service.availableIPPool.Remove(id)
+			}
 			logger.Printf("[MarkExistingIPsAsPending]: Marking IP [%+v] to PendingRelease", ipconfig)
 			ipconfig.SetState(types.PendingRelease)
 			service.PodIPConfigState[id] = ipconfig
@@ -982,6 +992,9 @@ func (service *HTTPRestService) AssignDesiredIPConfigs(podInfo cns.PodInfo, desi
 		case types.Available, types.PendingProgramming:
 			// This race can happen during restart, where CNS state is lost and thus we have lost the NC programmed version
 			// As part of reconcile, we mark IPs as Assigned which are already assigned to Pods (listed from APIServer)
+			if ipConfig.GetState() == types.Available {
+				service.availableIPPool.Remove(ipConfig.ID)
+			}
 			ipConfigsToAssign = append(ipConfigsToAssign, ipConfig)
 		default:
 			logger.Errorf("[AssignDesiredIPConfigs] Desired IP is not available %+v", ipConfig)
@@ -1058,42 +1071,26 @@ func (service *HTTPRestService) AssignAvailableIPConfigs(podInfo cns.PodInfo) ([
 	// This map is used to store whether or not we have found an available IP from an NC when looping through the pool
 	ipsToAssign := make(map[string]cns.IPConfigurationStatus)
 
-	// Searches for available IPs in the pool
-	for _, ipState := range service.PodIPConfigState {
-
-		// get the IPFamily of the current ipState
-		var ipStateFamily cns.IPFamily = cns.IPv4
-
-		if ipAddr, err := netip.ParseAddr(ipState.IPAddress); err == nil && ipAddr.Is6() {
-			ipStateFamily = cns.IPv6
-		}
-
-		key := generateAssignedIPKey(ipState.NCID, ipStateFamily)
-
-		// check if the IP with the same family type exists already
-		if _, ncIPFamilyAlreadyMarkedForAssignment := ipsToAssign[key]; ncIPFamilyAlreadyMarkedForAssignment {
-			continue
-		}
-		// Checks if the current IP is available
-		if ipState.GetState() != types.Available {
-			continue
-		}
-		ipsToAssign[key] = ipState
-		// Once numberOfIPs per container is found break out of the loop and stop searching
-		if len(ipsToAssign) == numberOfIPs {
-			break
-		}
-	}
-
-	// Checks to make sure we found one IP for each NCxIPFamily
-	if len(ipsToAssign) != numberOfIPs {
+	// O(1) pop: find one Available IP per IP family from any NC
+	for family := range ncIPFamilies {
+		found := false
 		for ncID := range service.state.ContainerStatus {
-			for ipFamily := range ncIPFamilies {
-				if _, found := ipsToAssign[generateAssignedIPKey(ncID, ipFamily)]; found {
-					continue
-				}
+			key := generateAssignedIPKey(ncID, family)
+			ipID, ok := service.availableIPPool.Pop(key)
+			if ok {
+				ipsToAssign[key] = service.PodIPConfigState[ipID]
+				found = true
+				break
+			}
+		}
+		if !found {
+			// Rollback already-popped IPs back to pool
+			for _, ip := range ipsToAssign { //nolint:gocritic // ignore copy
+				service.availableIPPool.Push(ipPoolKeyFromIP(ip), ip.ID)
+			}
+			for ncID := range service.state.ContainerStatus {
 				return podIPInfo, errors.Errorf("not enough IPs available of type %s for %s, waiting on Azure CNS to allocate more with NC Status: %s",
-					ipFamily, ncID, string(service.state.ContainerStatus[ncID].CreateNetworkContainerRequest.NCStatus))
+					family, ncID, string(service.state.ContainerStatus[ncID].CreateNetworkContainerRequest.NCStatus))
 			}
 		}
 	}

@@ -165,6 +165,7 @@ func updatePodIPConfigState(t *testing.T, svc *HTTPRestService, ipconfigs map[st
 	// update ipconfigs to expected state
 	for ipID, ipconfig := range ipconfigs { //nolint:gocritic // ignore copy
 		if ipconfig.GetState() == types.Assigned {
+			svc.availableIPPool.Remove(ipID)
 			svc.PodIPIDByPodInterfaceKey[ipconfig.PodInfo.Key()] = append(svc.PodIPIDByPodInterfaceKey[ipconfig.PodInfo.Key()], ipID)
 			svc.PodIPConfigState[ipID] = ipconfig
 		}
@@ -2309,7 +2310,9 @@ func TestIPAMRequestIPConfigsProgrammingPendingFailure(t *testing.T) {
 	require.NoError(t, err)
 
 	// Manually set IPv6 IP to PendingProgramming state after NC creation
+	// Also update the pool to maintain consistency
 	ipv6State := svc.PodIPConfigState["ipv6-1"]
+	svc.availableIPPool.Remove("ipv6-1")
 	ipv6State.SetState(types.PendingProgramming)
 	svc.PodIPConfigState["ipv6-1"] = ipv6State
 
