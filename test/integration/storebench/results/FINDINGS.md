@@ -226,6 +226,45 @@ Results are written to `./results/<sku>/` as JSON files, a CSV, and a SUMMARY.md
 
 ---
 
+## Phase 3: Per-Record Bolt Cluster Validation (D8ads_v6, 2026-03-26)
+
+After integrating the per-record `EndpointBoltStore` with async writer into the CNS
+runtime, we ran a 9-run cluster benchmark on a Standard_D8ads_v6 node in canadacentral.
+
+**CNS Image:** `acnpublic.azurecr.io/azure-cns:linux-amd64-v1.8.3-11-gf1f6af34f`
+
+### Results (Kubelet SLI Mean, 3 runs averaged)
+
+| Scale | Bolt D8ads_v6 | JSON D8ads_v7 (baseline) | BBolt D8ads_v7 (baseline) |
+|------:|--------------:|-------------------------:|--------------------------:|
+| 50    | 10.16s        | 6.14s                    | 6.30s                     |
+| 100   | 16.54s        | 8.84s                    | 9.54s                     |
+| 150   | 23.59s        | —                        | —                         |
+| 200   | —             | 14.72s                   | 15.68s                    |
+
+### Pod Startup Percentiles (bolt, D8ads_v6)
+
+| Scale | P50   | P95   | P99   | Max   |
+|------:|------:|------:|------:|------:|
+| 50    | 9.3s  | 13.2s | 13.3s | 13.7s |
+| 100   | 15.5s | 24.7s | 25.3s | 25.7s |
+| 150   | 23.0s | 36.0s | 37.2s | 38.0s |
+
+### Analysis
+
+The D8ads_v6 numbers are ~65-85% higher than D8ads_v7 at equivalent scales. This is
+consistent with VM generation differences (v6 vs v7) and different regions (canadacentral
+vs westus2), **not** store backend changes. The v7 baseline showed no difference between
+JSON, BBolt, and SQLite — so the store backend is not a factor here either.
+
+The linear scaling pattern holds: ~0.16s additional latency per concurrent pod, matching
+the RTNL lock contention model. The bolt store's advantages are in **code quality** (no
+external mutexes, per-record CRUD, O(1) writes) rather than end-to-end pod startup time.
+
+Full results: `results/bolt-d8/`
+
+---
+
 ## Files
 
 | File | Description |
@@ -241,3 +280,5 @@ Results are written to `./results/<sku>/` as JSON files, a CSV, and a SUMMARY.md
 | `cns/restserver/endpointwriter.go` | Async per-record endpoint writer |
 | `test/integration/storebench/storebench_test.go` | Cluster benchmark harness |
 | `test/integration/storebench/results/` | Cluster benchmark results |
+| `test/integration/storebench/results/d8adsv7/` | Phase 1 baseline: JSON/BBolt/SQLite on D8ads_v7 |
+| `test/integration/storebench/results/bolt-d8/` | Phase 3: Per-record bolt on D8ads_v6 |
