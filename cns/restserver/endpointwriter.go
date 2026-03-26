@@ -12,8 +12,6 @@ import (
 )
 
 // persistEndpoint synchronously writes a single endpoint record to bolt.
-// Must be called while endpointStateMu is held to prevent races between
-// the in-memory state read and the bolt write.
 func (service *HTTPRestService) persistEndpoint(containerID string, info *EndpointInfo) error {
 	if service.endpointStore == nil {
 		return nil

@@ -179,6 +179,18 @@ func updatePnpIDMacAddressState(svc *HTTPRestService) {
 	}
 }
 
+// readAllEndpointState reads all endpoints from bolt and converts them to an EndpointInfo map for test assertions.
+func readAllEndpointState(t *testing.T, store *cnsstore.EndpointBoltStore) map[string]*EndpointInfo {
+	t.Helper()
+	eps, err := store.ListEndpoints(context.Background())
+	require.NoError(t, err)
+	result := make(map[string]*EndpointInfo, len(eps))
+	for containerID, rec := range eps {
+		result[containerID] = EndpointRecordToInfo(rec)
+	}
+	return result
+}
+
 func TestEndpointStateReadAndWrite(t *testing.T) {
 	testNcs := [][]ncState{
 		// single stack NC
@@ -269,14 +281,16 @@ func endpointStateReadAndWrite(t *testing.T, ncStates []ncState) {
 	if err != nil {
 		t.Fatalf("Expected to not fail updating endpoint state: %+v", err)
 	}
-	assert.Equal(t, desiredState, svc.EndpointState)
+	gotState := readAllEndpointState(t, epStore)
+	assert.Equal(t, desiredState, gotState)
 
 	// consecutive add of same endpoint should not change state or cause error
 	err = svc.updateEndpointState(req, testPod1Info, podIPInfo)
 	if err != nil {
 		t.Fatalf("Expected to not fail updating existing endpoint state: %+v", err)
 	}
-	assert.Equal(t, desiredState, svc.EndpointState)
+	gotState = readAllEndpointState(t, epStore)
+	assert.Equal(t, desiredState, gotState)
 
 	// delete
 	desiredState = map[string]*EndpointInfo{}
@@ -284,14 +298,16 @@ func endpointStateReadAndWrite(t *testing.T, ncStates []ncState) {
 	if err != nil {
 		t.Fatalf("Expected to not fail removing endpoint state: %+v", err)
 	}
-	assert.Equal(t, desiredState, svc.EndpointState)
+	gotState = readAllEndpointState(t, epStore)
+	assert.Equal(t, desiredState, gotState)
 
 	// delete non-existent endpoint should not change state or cause error
 	err = svc.removeEndpointState(testPod1Info)
 	if err != nil {
 		t.Fatalf("Expected to not fail removing non existing key: %+v", err)
 	}
-	assert.Equal(t, desiredState, svc.EndpointState)
+	gotState = readAllEndpointState(t, epStore)
+	assert.Equal(t, desiredState, gotState)
 }
 
 // assign the available IP to the new pod

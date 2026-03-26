@@ -24,7 +24,6 @@ func TestPersistEndpoint_PutAndGet(t *testing.T) {
 	s := openTestEndpointStore(t)
 	svc := &HTTPRestService{
 		endpointStore: s,
-		EndpointState: make(map[string]*EndpointInfo),
 	}
 
 	info := &EndpointInfo{
@@ -34,7 +33,6 @@ func TestPersistEndpoint_PutAndGet(t *testing.T) {
 			"eth0": {IPv4: []net.IPNet{{IP: net.IPv4(10, 0, 0, 1), Mask: net.IPv4Mask(255, 255, 255, 0)}}},
 		},
 	}
-	svc.EndpointState["abc123"] = info
 
 	err := svc.persistEndpoint("abc123", info)
 	require.NoError(t, err)
@@ -51,7 +49,6 @@ func TestDeletePersistedEndpoint(t *testing.T) {
 	s := openTestEndpointStore(t)
 	svc := &HTTPRestService{
 		endpointStore: s,
-		EndpointState: make(map[string]*EndpointInfo),
 	}
 
 	// Pre-populate
@@ -68,7 +65,6 @@ func TestDeletePersistedEndpoint(t *testing.T) {
 func TestPersistEndpoint_NilStore(t *testing.T) {
 	svc := &HTTPRestService{
 		endpointStore: nil,
-		EndpointState: make(map[string]*EndpointInfo),
 	}
 
 	// Should be a no-op when store is nil

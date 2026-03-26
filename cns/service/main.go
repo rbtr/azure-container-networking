@@ -1431,14 +1431,6 @@ func InitializeCRDState(ctx context.Context, z *zap.Logger, httpRestService cns.
 			if err = PopulateCNSEndpointState(ctx, httpRestServiceImplementation.EndpointStore()); err != nil {
 				return errors.Wrap(err, "failed to create CNS EndpointState From CNI")
 			}
-			// Reload into in-memory map.
-			eps, err = httpRestServiceImplementation.EndpointStore().ListEndpoints(ctx)
-			if err != nil {
-				return errors.Wrap(err, "failed to list endpoint state after migration")
-			}
-			for containerID, rec := range eps {
-				httpRestServiceImplementation.EndpointState[containerID] = restserver.EndpointRecordToInfo(rec)
-			}
 		}
 	}
 
@@ -1659,8 +1651,8 @@ func getPodInfoByIPProvider(
 	switch {
 	case cnsconfig.ManageEndpointState:
 		logger.Printf("Initializing from self managed endpoint store")
-		// Build pod info from in-memory endpoint state (already loaded from bolt).
-		podInfoByIPProvider = cnspodprovider.NewFromEndpointState(httpRestServiceImplementation.EndpointState)
+		// Build pod info directly from bolt store.
+		podInfoByIPProvider = cnspodprovider.NewFromEndpointStore(httpRestServiceImplementation.EndpointStore())
 	default:
 		logger.Printf("Initializing from CNI")
 		podInfoByIPProvider, err = cnipodprovider.New()

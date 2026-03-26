@@ -129,10 +129,7 @@ func (service *HTTPRestService) restoreState() {
 				logger.Errorf("[Azure CNS]  Failed to restore endpoint state from bolt, err:%v", err)
 				return
 			}
-			for containerID, rec := range eps {
-				service.EndpointState[containerID] = EndpointRecordToInfo(rec)
-			}
-			logger.Printf("[Azure CNS]  Restored %d endpoints from bolt store\n", len(eps))
+			logger.Printf("[Azure CNS]  Found %d endpoints in bolt store\n", len(eps))
 		}
 	}
 }

@@ -96,8 +96,6 @@ type HTTPRestService struct {
 	podsPendingIPAssignment  *bounded.TimedSet
 	sync.RWMutex
 	dncPartitionKey            string
-	EndpointState              map[string]*EndpointInfo // key : container id
-	endpointStateMu            sync.RWMutex             // protects EndpointState map independently of IP pool lock
 	endpointStore              *cnsstore.EndpointBoltStore
 	cniConflistGenerator       CNIConflistGenerator
 	generateCNIConflistOnce    sync.Once
@@ -253,7 +251,6 @@ func NewHTTPRestService(config *common.ServiceConfig, wscli interfaceGetter, wsp
 		state:                    serviceState,
 		podsPendingIPAssignment:  bounded.NewTimedSet(250), // nolint:gomnd // maxpods
 		endpointStore:            endpointStore,
-		EndpointState:            make(map[string]*EndpointInfo),
 		homeAzMonitor:            homeAzMonitor,
 		cniConflistGenerator:     gen,
 		imdsClient:               imdsClient,

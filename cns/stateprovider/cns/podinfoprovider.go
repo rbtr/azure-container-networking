@@ -1,6 +1,7 @@
 package cns
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/Azure/azure-container-networking/cns"
 	"github.com/Azure/azure-container-networking/cns/logger"
 	"github.com/Azure/azure-container-networking/cns/restserver"
+	cnsstore "github.com/Azure/azure-container-networking/cns/store"
 	"github.com/Azure/azure-container-networking/store"
 	"github.com/pkg/errors"
 	kexec "k8s.io/utils/exec"
@@ -20,11 +22,18 @@ func New(endpointStore store.KeyValueStore) (cns.PodInfoByIPProvider, error) {
 	return podInfoProvider(endpointStore)
 }
 
-// NewFromEndpointState returns a PodInfoByIPProvider from an already-loaded
-// in-memory endpoint state map. This avoids reading from disk when the state
-// has already been restored (e.g. from boltdb at startup).
-func NewFromEndpointState(state map[string]*restserver.EndpointInfo) cns.PodInfoByIPProvider {
+// NewFromEndpointStore returns a PodInfoByIPProvider that reads endpoint state
+// directly from the bolt store each time PodInfoByIP() is called.
+func NewFromEndpointStore(boltStore *cnsstore.EndpointBoltStore) cns.PodInfoByIPProvider {
 	return cns.PodInfoByIPProviderFunc(func() (map[string]cns.PodInfo, error) {
+		eps, err := boltStore.ListEndpoints(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("failed to list endpoints from bolt: %w", err)
+		}
+		state := make(map[string]*restserver.EndpointInfo, len(eps))
+		for containerID, rec := range eps {
+			state[containerID] = restserver.EndpointRecordToInfo(rec)
+		}
 		return endpointStateToPodInfoByIP(state)
 	})
 }

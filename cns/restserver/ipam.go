@@ -15,6 +15,7 @@ import (
 	"github.com/Azure/azure-container-networking/cns"
 	"github.com/Azure/azure-container-networking/cns/filter"
 	"github.com/Azure/azure-container-networking/cns/logger"
+	cnsstore "github.com/Azure/azure-container-networking/cns/store"
 	"github.com/Azure/azure-container-networking/cns/types"
 	"github.com/Azure/azure-container-networking/common"
 	"github.com/pkg/errors"
@@ -351,12 +352,26 @@ func (service *HTTPRestService) updateEndpointState(ipconfigsRequest cns.IPConfi
 	if service.endpointStore == nil {
 		return ErrStoreEmpty
 	}
-	service.endpointStateMu.Lock()
-	defer service.endpointStateMu.Unlock()
-	logger.Printf("[updateEndpointState] Updating endpoint state for infra container %s", ipconfigsRequest.InfraContainerID)
+	ctx := context.Background()
+	containerID := ipconfigsRequest.InfraContainerID
+	logger.Printf("[updateEndpointState] Updating endpoint state for infra container %s", containerID)
+
+	// Read existing endpoint from bolt (if any).
+	rec, err := service.endpointStore.GetEndpoint(ctx, containerID)
+	var endpointInfo *EndpointInfo
+	if err != nil {
+		if !errors.Is(err, cnsstore.ErrNotFound) {
+			return err
+		}
+		// Not found — will create a new EndpointInfo below.
+		endpointInfo = nil
+	} else {
+		endpointInfo = EndpointRecordToInfo(rec)
+	}
+
 	for i := range podIPInfo {
-		if endpointInfo, ok := service.EndpointState[ipconfigsRequest.InfraContainerID]; ok {
-			logger.Warnf("[updateEndpointState] Found existing endpoint state for infra container %s", ipconfigsRequest.InfraContainerID)
+		if endpointInfo != nil {
+			logger.Warnf("[updateEndpointState] Found existing endpoint state for infra container %s", containerID)
 			ip := net.ParseIP(podIPInfo[i].PodIPConfig.IPAddress)
 			if ip == nil {
 				logger.Errorf("failed to parse pod ip address %s", podIPInfo[i].PodIPConfig.IPAddress)
@@ -366,7 +381,7 @@ func (service *HTTPRestService) updateEndpointState(ipconfigsRequest cns.IPConfi
 				ipconfig := net.IPNet{IP: ip, Mask: net.CIDRMask(int(podIPInfo[i].PodIPConfig.PrefixLength), 128)} // nolint
 				for _, ipconf := range endpointInfo.IfnameToIPMap[ipconfigsRequest.Ifname].IPv6 {
 					if ipconf.IP.Equal(ipconfig.IP) {
-						logger.Printf("[updateEndpointState] Found existing ipv6 ipconfig for infra container %s", ipconfigsRequest.InfraContainerID)
+						logger.Printf("[updateEndpointState] Found existing ipv6 ipconfig for infra container %s", containerID)
 						return nil
 					}
 				}
@@ -375,15 +390,14 @@ func (service *HTTPRestService) updateEndpointState(ipconfigsRequest cns.IPConfi
 				ipconfig := net.IPNet{IP: ip, Mask: net.CIDRMask(int(podIPInfo[i].PodIPConfig.PrefixLength), 32)} // nolint
 				for _, ipconf := range endpointInfo.IfnameToIPMap[ipconfigsRequest.Ifname].IPv4 {
 					if ipconf.IP.Equal(ipconfig.IP) {
-						logger.Printf("[updateEndpointState] Found existing ipv4 ipconfig for infra container %s", ipconfigsRequest.InfraContainerID)
+						logger.Printf("[updateEndpointState] Found existing ipv4 ipconfig for infra container %s", containerID)
 						return nil
 					}
 				}
 				endpointInfo.IfnameToIPMap[ipconfigsRequest.Ifname].IPv4 = append(endpointInfo.IfnameToIPMap[ipconfigsRequest.Ifname].IPv4, ipconfig)
 			}
-			service.EndpointState[ipconfigsRequest.InfraContainerID] = endpointInfo
 		} else {
-			endpointInfo := &EndpointInfo{PodName: podInfo.Name(), PodNamespace: podInfo.Namespace(), IfnameToIPMap: make(map[string]*IPInfo)}
+			endpointInfo = &EndpointInfo{PodName: podInfo.Name(), PodNamespace: podInfo.Namespace(), IfnameToIPMap: make(map[string]*IPInfo)}
 			ip := net.ParseIP(podIPInfo[i].PodIPConfig.IPAddress)
 			if ip == nil {
 				logger.Errorf("failed to parse pod ip address %s", podIPInfo[i].PodIPConfig.IPAddress)
@@ -398,13 +412,12 @@ func (service *HTTPRestService) updateEndpointState(ipconfigsRequest cns.IPConfi
 				ipInfo.IPv4 = append(ipInfo.IPv4, ipconfig)
 			}
 			endpointInfo.IfnameToIPMap[ipconfigsRequest.Ifname] = ipInfo
-			service.EndpointState[ipconfigsRequest.InfraContainerID] = endpointInfo
 		}
 	}
 
 	// Persist synchronously — must complete before we return the response to
 	// the CNI, so that a crash cannot lose the assignment.
-	return service.persistEndpoint(ipconfigsRequest.InfraContainerID, service.EndpointState[ipconfigsRequest.InfraContainerID])
+	return service.persistEndpoint(containerID, endpointInfo)
 }
 
 // ReleaseIPConfigHandlerHelper validates the request and removes the endpoint associated with the pod
@@ -552,16 +565,10 @@ func (service *HTTPRestService) removeEndpointState(podInfo cns.PodInfo) error {
 	if service.endpointStore == nil {
 		return ErrStoreEmpty
 	}
-	service.endpointStateMu.Lock()
-	defer service.endpointStateMu.Unlock()
 	logger.Printf("[removeEndpointState] Removing endpoint state for infra container %s", podInfo.InfraContainerID())
-	if _, ok := service.EndpointState[podInfo.InfraContainerID()]; ok {
-		delete(service.EndpointState, podInfo.InfraContainerID())
-		if err := service.deletePersistedEndpoint(podInfo.InfraContainerID()); err != nil {
-			return err
-		}
-	} else { // will not fail if no endpoint state for infra container id is found
-		logger.Printf("[removeEndpointState] No endpoint state found for infra container %s", podInfo.InfraContainerID())
+	// Bolt delete on a non-existent key is a no-op, matching previous behavior.
+	if err := service.deletePersistedEndpoint(podInfo.InfraContainerID()); err != nil {
+		return err
 	}
 	return nil
 }
@@ -1187,9 +1194,6 @@ func (service *HTTPRestService) EndpointHandlerAPI(w http.ResponseWriter, r *htt
 		logger.Response(opName, response, response.ReturnCode, err)
 		return
 	}
-	// Endpoint state is protected by endpointStateMu, not the IP pool RWMutex.
-	service.endpointStateMu.Lock()
-	defer service.endpointStateMu.Unlock()
 	switch r.Method {
 	case http.MethodGet:
 		service.GetEndpointHandler(w, r)
@@ -1248,14 +1252,15 @@ func (service *HTTPRestService) DeleteEndpointStateHelper(endpointID string) err
 		return ErrStoreEmpty
 	}
 	logger.Printf("[deleteEndpointState] Deleting Endpoint state from state file %s", endpointID) //nolint:staticcheck // reason: using deprecated call until migration to new API
-	_, endpointExist := service.EndpointState[endpointID]
-	if !endpointExist {
-		logger.Printf("[deleteEndpointState] endpoint could not be found in the statefile %s", endpointID) //nolint:staticcheck // reason: using deprecated call until migration to new API
-		return fmt.Errorf("[deleteEndpointState] endpoint %s: %w", endpointID, ErrEndpointStateNotFound)
-	}
 
-	// Delete the endpoint from the state
-	delete(service.EndpointState, endpointID)
+	// Check existence in bolt.
+	if _, err := service.endpointStore.GetEndpoint(context.Background(), endpointID); err != nil {
+		if errors.Is(err, cnsstore.ErrNotFound) {
+			logger.Printf("[deleteEndpointState] endpoint could not be found in the statefile %s", endpointID) //nolint:staticcheck // reason: using deprecated call until migration to new API
+			return fmt.Errorf("[deleteEndpointState] endpoint %s: %w", endpointID, ErrEndpointStateNotFound)
+		}
+		return err
+	}
 
 	if err := service.deletePersistedEndpoint(endpointID); err != nil {
 		return err
@@ -1303,8 +1308,7 @@ func (service *HTTPRestService) GetEndpointHandler(w http.ResponseWriter, r *htt
 	logger.Response(opName, response, response.Response.ReturnCode, err)
 }
 
-// GetEndpointHelper returns the state of the given endpointId.
-// The in-memory EndpointState is the authoritative source of truth.
+// GetEndpointHelper returns the state of the given endpointId from bolt.
 func (service *HTTPRestService) GetEndpointHelper(endpointID string) (*EndpointInfo, error) {
 	logger.Printf("[GetEndpointState] Get endpoint state for infra container %s", endpointID)
 
@@ -1314,17 +1318,25 @@ func (service *HTTPRestService) GetEndpointHelper(endpointID string) (*EndpointI
 		return nil, ErrStoreEmpty
 	}
 
-	if endpointInfo, ok := service.EndpointState[endpointID]; ok {
+	ctx := context.Background()
+	rec, err := service.endpointStore.GetEndpoint(ctx, endpointID)
+	if err == nil {
 		logger.Warnf("[GetEndpointState] Found existing endpoint state for container %s", endpointID)
-		return endpointInfo, nil
+		return EndpointRecordToInfo(rec), nil
 	}
-	// This part is a temprory fix if we have endpoint states belong to CNI version 1.4.X on Windows since the states don't have the containerID
-	// In case there was no endpoint founded with ContainerID as the key,
-	// then [First 8 character of containerid]-eth0 will be tried
+	if !errors.Is(err, cnsstore.ErrNotFound) {
+		return nil, err
+	}
+
+	// Legacy fallback: try with InfraInterfaceName prefix (Windows v1.4.X compatibility).
 	legacyEndpointID := endpointID[:ContainerIDLength] + "-" + InfraInterfaceName
-	if endpointInfo, ok := service.EndpointState[legacyEndpointID]; ok {
+	rec, err = service.endpointStore.GetEndpoint(ctx, legacyEndpointID)
+	if err == nil {
 		logger.Warnf("[GetEndpointState] Found existing endpoint state for container %s", legacyEndpointID)
-		return endpointInfo, nil
+		return EndpointRecordToInfo(rec), nil
+	}
+	if !errors.Is(err, cnsstore.ErrNotFound) {
+		return nil, err
 	}
 	return nil, ErrEndpointStateNotFound
 }
@@ -1386,20 +1398,28 @@ func (service *HTTPRestService) UpdateEndpointHelper(endpointID string, req map[
 		return ErrStoreEmpty
 	}
 	logger.Printf("[updateEndpoint] Updating endpoint state for infra container %s", endpointID)
-	endpointInfo, endpointExist := service.EndpointState[endpointID]
-	// create a new entry in case the ednpoint does not exist in the statefile.
-	// this applies to the ACI scenario when the endpoint is not added to the statefile when the goalstate is sent to CNI
-	if !endpointExist {
+
+	ctx := context.Background()
+	var endpointInfo *EndpointInfo
+	rec, err := service.endpointStore.GetEndpoint(ctx, endpointID)
+	if err != nil {
+		if !errors.Is(err, cnsstore.ErrNotFound) {
+			return err
+		}
+		// create a new entry in case the endpoint does not exist in the statefile.
+		// this applies to the ACI scenario when the endpoint is not added to the statefile when the goalstate is sent to CNI
 		logger.Printf("[updateEndpoint] endpoint could not be found in the statefile %s, new entry is being added", endpointID)
 		endpointInfo = &EndpointInfo{PodName: "", PodNamespace: "", IfnameToIPMap: make(map[string]*IPInfo)}
-		service.EndpointState[endpointID] = endpointInfo
+	} else {
+		endpointInfo = EndpointRecordToInfo(rec)
 	}
+
 	// updating the InterfaceInfo map of endpoint states with the interfaceInfo map that is given by Stateless Azure CNI
 	for ifName, interfaceInfo := range req {
 		// updating the ipInfoMap
 		updateIPInfoMap(endpointInfo.IfnameToIPMap, interfaceInfo, ifName, endpointID)
 	}
-	if err := service.persistEndpoint(endpointID, service.EndpointState[endpointID]); err != nil {
+	if err := service.persistEndpoint(endpointID, endpointInfo); err != nil {
 		return err
 	}
 	logger.Printf("[updateEndpoint] successfully write the state to the file %s", endpointID)
