@@ -13,24 +13,22 @@ parameters:
   - name: storageAccount2
     type: string
     default: ''
-  - name: runSetupStages
-    type: boolean
-    default: false
+  - name: leaseAcquired
+    type: string
+    default: 'true'
   - name: dependsOn
     type: object
     default: []
 
 stages:
   - stage: DataPathTests_${{ replace(parameters.workloadType, '-', '_') }}_${{ replace(parameters.location, '-', '_') }}
-    displayName: "Stage: Swiftv2 Data Path Tests - ${{ parameters.workloadType }} (${{ parameters.location }})"
-    ${{ if ne(length(parameters.dependsOn), 0) }}:
-      dependsOn: ${{ parameters.dependsOn }}
-    ${{ else }}:
-      dependsOn: AKSClusterAndNetworking
-    condition: and(eq(variables.isAllowedRun, true), or(eq(${{ parameters.runSetupStages }}, false), succeeded()))
+    displayName: "Swiftv2 Data Path Tests - ${{ parameters.workloadType }} (${{ parameters.location }})"
+    dependsOn: ${{ parameters.dependsOn }}
+    condition: and(eq(variables.isAllowedRun, true), not(failed()), eq(dependencies.AcquireLease_${{ replace(parameters.location, '-', '_') }}.outputs['AcquireLease.AcquireLeaseStep.leaseAcquired'], 'true'))
     variables:
       storageAccount1: ${{ parameters.storageAccount1 }}
       storageAccount2: ${{ parameters.storageAccount2 }}
+      leaseAcquired: ${{ parameters.leaseAcquired }}
     jobs:
       - job: SetupKubeconfig
         displayName: "Setup Kubeconfig Files"
@@ -115,7 +113,7 @@ stages:
               inlineScript: |
                 echo "==> Creating pods (8 scenarios) for workload type: ${{ parameters.workloadType }}"
                 export RG="${{ parameters.rgName }}"
-                export BUILD_ID="${{ parameters.rgName }}"
+                export BUILD_ID="${{ parameters.rgName }}-${{ replace(parameters.workloadType, 'swiftv2-', '') }}"
                 export WORKLOAD_TYPE="${{ parameters.workloadType }}"
                 
                 metrics_dir="$(System.DefaultWorkingDirectory)/Networking-Aquarius/src/dnc"
@@ -156,7 +154,7 @@ stages:
               inlineScript: |
                 echo "==> Running connectivity tests for workload type: ${{ parameters.workloadType }}"
                 export RG="${{ parameters.rgName }}"
-                export BUILD_ID="${{ parameters.rgName }}"
+                export BUILD_ID="${{ parameters.rgName }}-${{ replace(parameters.workloadType, 'swiftv2-', '') }}"
                 export WORKLOAD_TYPE="${{ parameters.workloadType }}"
                 
                 metrics_dir="$(System.DefaultWorkingDirectory)/Networking-Aquarius/src/dnc"
@@ -231,7 +229,7 @@ stages:
               inlineScript: |
                 echo "==> Running Private Endpoint connectivity tests for workload type: ${{ parameters.workloadType }}"
                 export RG="${{ parameters.rgName }}"
-                export BUILD_ID="${{ parameters.rgName }}"
+                export BUILD_ID="${{ parameters.rgName }}-${{ replace(parameters.workloadType, 'swiftv2-', '') }}"
                 export WORKLOAD_TYPE="${{ parameters.workloadType }}"
                 export STORAGE_ACCOUNT_1="$(DiscoverStorageAccounts.storageAccount1)"
                 export STORAGE_ACCOUNT_2="$(DiscoverStorageAccounts.storageAccount2)"
@@ -290,7 +288,7 @@ stages:
                 echo "  - 10 pods in aks-1 (cx_vnet_v1/s1)"
                 echo "  - 10 pods in aks-2 (cx_vnet_v3/s1)"
                 export RG="${{ parameters.rgName }}"
-                export BUILD_ID="${{ parameters.rgName }}"
+                export BUILD_ID="${{ parameters.rgName }}-${{ replace(parameters.workloadType, 'swiftv2-', '') }}"
                 export WORKLOAD_TYPE="${{ parameters.workloadType }}"
                 
                 metrics_dir="$(System.DefaultWorkingDirectory)/Networking-Aquarius/src/dnc"
@@ -336,7 +334,7 @@ stages:
               inlineScript: |
                 echo "==> Deleting test resources (8 scenarios) for workload type: ${{ parameters.workloadType }}"
                 export RG="${{ parameters.rgName }}"
-                export BUILD_ID="${{ parameters.rgName }}"
+                export BUILD_ID="${{ parameters.rgName }}-${{ replace(parameters.workloadType, 'swiftv2-', '') }}"
                 export WORKLOAD_TYPE="${{ parameters.workloadType }}"
                 
                 metrics_dir="$(System.DefaultWorkingDirectory)/Networking-Aquarius/src/dnc"
