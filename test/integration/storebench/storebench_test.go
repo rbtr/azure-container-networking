@@ -422,6 +422,13 @@ func switchBackend(ctx context.Context, t *testing.T, clientset *k8s.Clientset, 
 	t.Helper()
 	t.Logf("Switching CNS store backend to: %s", backend)
 
+	// If the backend is "none" (e.g., testing a non-CNS CNI like flannel), skip
+	// all CNS-specific configuration changes.
+	if backend == "none" {
+		t.Log("Backend 'none': skipping CNS configuration (non-CNS CNI mode)")
+		return
+	}
+
 	// Update the ConfigMap with the new backend.
 	cm, err := clientset.CoreV1().ConfigMaps(cnsNamespace).Get(ctx, cnsConfigMap, metav1.GetOptions{})
 	if err != nil {

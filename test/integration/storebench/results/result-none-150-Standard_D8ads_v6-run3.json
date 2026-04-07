@@ -1,0 +1,722 @@
+{
+  "backend": "none",
+  "scale": 150,
+  "sku": "Standard_D8ads_v6",
+  "run": 3,
+  "wall_clock_ms": 50268,
+  "pod_count": 150,
+  "p50": 26.5,
+  "p95": 41,
+  "p99": 41.50999999999999,
+  "max": 42,
+  "mean": 26.966666666666665,
+  "latencies": [
+    {
+      "name": "storebench-f6ddb69cf-2cvxc",
+      "latency_ms": 39000
+    },
+    {
+      "name": "storebench-f6ddb69cf-2vq5l",
+      "latency_ms": 19000
+    },
+    {
+      "name": "storebench-f6ddb69cf-2wfw5",
+      "latency_ms": 23000
+    },
+    {
+      "name": "storebench-f6ddb69cf-2xjh2",
+      "latency_ms": 33000
+    },
+    {
+      "name": "storebench-f6ddb69cf-48nct",
+      "latency_ms": 31000
+    },
+    {
+      "name": "storebench-f6ddb69cf-49jhr",
+      "latency_ms": 32000
+    },
+    {
+      "name": "storebench-f6ddb69cf-4cn64",
+      "latency_ms": 16000
+    },
+    {
+      "name": "storebench-f6ddb69cf-4cs4d",
+      "latency_ms": 19000
+    },
+    {
+      "name": "storebench-f6ddb69cf-4q5kr",
+      "latency_ms": 35000
+    },
+    {
+      "name": "storebench-f6ddb69cf-4sk2r",
+      "latency_ms": 29000
+    },
+    {
+      "name": "storebench-f6ddb69cf-4sx9b",
+      "latency_ms": 25000
+    },
+    {
+      "name": "storebench-f6ddb69cf-4tddz",
+      "latency_ms": 30000
+    },
+    {
+      "name": "storebench-f6ddb69cf-4v7w8",
+      "latency_ms": 30000
+    },
+    {
+      "name": "storebench-f6ddb69cf-56zsv",
+      "latency_ms": 28000
+    },
+    {
+      "name": "storebench-f6ddb69cf-5cl25",
+      "latency_ms": 21000
+    },
+    {
+      "name": "storebench-f6ddb69cf-5g954",
+      "latency_ms": 25000
+    },
+    {
+      "name": "storebench-f6ddb69cf-5nfsn",
+      "latency_ms": 41000
+    },
+    {
+      "name": "storebench-f6ddb69cf-5vl8l",
+      "latency_ms": 26000
+    },
+    {
+      "name": "storebench-f6ddb69cf-674tx",
+      "latency_ms": 18000
+    },
+    {
+      "name": "storebench-f6ddb69cf-68kcg",
+      "latency_ms": 29000
+    },
+    {
+      "name": "storebench-f6ddb69cf-6hl9j",
+      "latency_ms": 18000
+    },
+    {
+      "name": "storebench-f6ddb69cf-6jbvp",
+      "latency_ms": 38000
+    },
+    {
+      "name": "storebench-f6ddb69cf-6qc9f",
+      "latency_ms": 13000
+    },
+    {
+      "name": "storebench-f6ddb69cf-6sz89",
+      "latency_ms": 24000
+    },
+    {
+      "name": "storebench-f6ddb69cf-77z4d",
+      "latency_ms": 18000
+    },
+    {
+      "name": "storebench-f6ddb69cf-78ffr",
+      "latency_ms": 34000
+    },
+    {
+      "name": "storebench-f6ddb69cf-78x4w",
+      "latency_ms": 20000
+    },
+    {
+      "name": "storebench-f6ddb69cf-79w2r",
+      "latency_ms": 26000
+    },
+    {
+      "name": "storebench-f6ddb69cf-7dpb7",
+      "latency_ms": 34000
+    },
+    {
+      "name": "storebench-f6ddb69cf-7vt7f",
+      "latency_ms": 41000
+    },
+    {
+      "name": "storebench-f6ddb69cf-86lgp",
+      "latency_ms": 32000
+    },
+    {
+      "name": "storebench-f6ddb69cf-8lmjm",
+      "latency_ms": 16000
+    },
+    {
+      "name": "storebench-f6ddb69cf-8pj9n",
+      "latency_ms": 37000
+    },
+    {
+      "name": "storebench-f6ddb69cf-9d2sz",
+      "latency_ms": 14000
+    },
+    {
+      "name": "storebench-f6ddb69cf-9m97p",
+      "latency_ms": 18000
+    },
+    {
+      "name": "storebench-f6ddb69cf-9pvb7",
+      "latency_ms": 30000
+    },
+    {
+      "name": "storebench-f6ddb69cf-9vgdn",
+      "latency_ms": 39000
+    },
+    {
+      "name": "storebench-f6ddb69cf-b2j6g",
+      "latency_ms": 16000
+    },
+    {
+      "name": "storebench-f6ddb69cf-b9ftl",
+      "latency_ms": 36000
+    },
+    {
+      "name": "storebench-f6ddb69cf-bdcxm",
+      "latency_ms": 29000
+    },
+    {
+      "name": "storebench-f6ddb69cf-bjcxf",
+      "latency_ms": 34000
+    },
+    {
+      "name": "storebench-f6ddb69cf-bkxph",
+      "latency_ms": 27000
+    },
+    {
+      "name": "storebench-f6ddb69cf-bnlft",
+      "latency_ms": 18000
+    },
+    {
+      "name": "storebench-f6ddb69cf-bpzzc",
+      "latency_ms": 26000
+    },
+    {
+      "name": "storebench-f6ddb69cf-btng4",
+      "latency_ms": 11000
+    },
+    {
+      "name": "storebench-f6ddb69cf-c2j2f",
+      "latency_ms": 41000
+    },
+    {
+      "name": "storebench-f6ddb69cf-c4jdt",
+      "latency_ms": 41000
+    },
+    {
+      "name": "storebench-f6ddb69cf-c5l6w",
+      "latency_ms": 21000
+    },
+    {
+      "name": "storebench-f6ddb69cf-c6g89",
+      "latency_ms": 18000
+    },
+    {
+      "name": "storebench-f6ddb69cf-c89jm",
+      "latency_ms": 27000
+    },
+    {
+      "name": "storebench-f6ddb69cf-c9gnx",
+      "latency_ms": 27000
+    },
+    {
+      "name": "storebench-f6ddb69cf-cf2qq",
+      "latency_ms": 42000
+    },
+    {
+      "name": "storebench-f6ddb69cf-chx78",
+      "latency_ms": 26000
+    },
+    {
+      "name": "storebench-f6ddb69cf-cnrv6",
+      "latency_ms": 31000
+    },
+    {
+      "name": "storebench-f6ddb69cf-cr67c",
+      "latency_ms": 36000
+    },
+    {
+      "name": "storebench-f6ddb69cf-crf9f",
+      "latency_ms": 19000
+    },
+    {
+      "name": "storebench-f6ddb69cf-d87t8",
+      "latency_ms": 35000
+    },
+    {
+      "name": "storebench-f6ddb69cf-d8fmz",
+      "latency_ms": 18000
+    },
+    {
+      "name": "storebench-f6ddb69cf-dbqn5",
+      "latency_ms": 18000
+    },
+    {
+      "name": "storebench-f6ddb69cf-djs4z",
+      "latency_ms": 41000
+    },
+    {
+      "name": "storebench-f6ddb69cf-dmsh8",
+      "latency_ms": 24000
+    },
+    {
+      "name": "storebench-f6ddb69cf-dt8gm",
+      "latency_ms": 29000
+    },
+    {
+      "name": "storebench-f6ddb69cf-f2wsb",
+      "latency_ms": 28000
+    },
+    {
+      "name": "storebench-f6ddb69cf-fk2wc",
+      "latency_ms": 36000
+    },
+    {
+      "name": "storebench-f6ddb69cf-flzll",
+      "latency_ms": 41000
+    },
+    {
+      "name": "storebench-f6ddb69cf-fnqgf",
+      "latency_ms": 39000
+    },
+    {
+      "name": "storebench-f6ddb69cf-fv4vc",
+      "latency_ms": 35000
+    },
+    {
+      "name": "storebench-f6ddb69cf-g6cwv",
+      "latency_ms": 29000
+    },
+    {
+      "name": "storebench-f6ddb69cf-g7sxr",
+      "latency_ms": 22000
+    },
+    {
+      "name": "storebench-f6ddb69cf-gbhxk",
+      "latency_ms": 25000
+    },
+    {
+      "name": "storebench-f6ddb69cf-gggj8",
+      "latency_ms": 18000
+    },
+    {
+      "name": "storebench-f6ddb69cf-gk72c",
+      "latency_ms": 37000
+    },
+    {
+      "name": "storebench-f6ddb69cf-h4p7t",
+      "latency_ms": 24000
+    },
+    {
+      "name": "storebench-f6ddb69cf-h667x",
+      "latency_ms": 23000
+    },
+    {
+      "name": "storebench-f6ddb69cf-hg48p",
+      "latency_ms": 18000
+    },
+    {
+      "name": "storebench-f6ddb69cf-hpgt2",
+      "latency_ms": 35000
+    },
+    {
+      "name": "storebench-f6ddb69cf-hsddp",
+      "latency_ms": 35000
+    },
+    {
+      "name": "storebench-f6ddb69cf-hv7vp",
+      "latency_ms": 38000
+    },
+    {
+      "name": "storebench-f6ddb69cf-jl24s",
+      "latency_ms": 20000
+    },
+    {
+      "name": "storebench-f6ddb69cf-jvhhx",
+      "latency_ms": 13000
+    },
+    {
+      "name": "storebench-f6ddb69cf-k8rbw",
+      "latency_ms": 22000
+    },
+    {
+      "name": "storebench-f6ddb69cf-kcllv",
+      "latency_ms": 31000
+    },
+    {
+      "name": "storebench-f6ddb69cf-kfs6h",
+      "latency_ms": 18000
+    },
+    {
+      "name": "storebench-f6ddb69cf-kxqrm",
+      "latency_ms": 39000
+    },
+    {
+      "name": "storebench-f6ddb69cf-kzbpc",
+      "latency_ms": 20000
+    },
+    {
+      "name": "storebench-f6ddb69cf-l425q",
+      "latency_ms": 27000
+    },
+    {
+      "name": "storebench-f6ddb69cf-l4g8p",
+      "latency_ms": 25000
+    },
+    {
+      "name": "storebench-f6ddb69cf-lj5kt",
+      "latency_ms": 19000
+    },
+    {
+      "name": "storebench-f6ddb69cf-lkp46",
+      "latency_ms": 35000
+    },
+    {
+      "name": "storebench-f6ddb69cf-lnvmq",
+      "latency_ms": 15000
+    },
+    {
+      "name": "storebench-f6ddb69cf-ltk88",
+      "latency_ms": 19000
+    },
+    {
+      "name": "storebench-f6ddb69cf-ltp5q",
+      "latency_ms": 13000
+    },
+    {
+      "name": "storebench-f6ddb69cf-m45qf",
+      "latency_ms": 23000
+    },
+    {
+      "name": "storebench-f6ddb69cf-m62wf",
+      "latency_ms": 25000
+    },
+    {
+      "name": "storebench-f6ddb69cf-mgww5",
+      "latency_ms": 33000
+    },
+    {
+      "name": "storebench-f6ddb69cf-mhplv",
+      "latency_ms": 19000
+    },
+    {
+      "name": "storebench-f6ddb69cf-msvzd",
+      "latency_ms": 22000
+    },
+    {
+      "name": "storebench-f6ddb69cf-mxzhz",
+      "latency_ms": 37000
+    },
+    {
+      "name": "storebench-f6ddb69cf-nnsmc",
+      "latency_ms": 24000
+    },
+    {
+      "name": "storebench-f6ddb69cf-npcsf",
+      "latency_ms": 30000
+    },
+    {
+      "name": "storebench-f6ddb69cf-nxlbk",
+      "latency_ms": 21000
+    },
+    {
+      "name": "storebench-f6ddb69cf-p9gfm",
+      "latency_ms": 32000
+    },
+    {
+      "name": "storebench-f6ddb69cf-pm8p8",
+      "latency_ms": 12000
+    },
+    {
+      "name": "storebench-f6ddb69cf-pm8rv",
+      "latency_ms": 28000
+    },
+    {
+      "name": "storebench-f6ddb69cf-ppz9z",
+      "latency_ms": 24000
+    },
+    {
+      "name": "storebench-f6ddb69cf-q5j9p",
+      "latency_ms": 14000
+    },
+    {
+      "name": "storebench-f6ddb69cf-q8sgg",
+      "latency_ms": 22000
+    },
+    {
+      "name": "storebench-f6ddb69cf-qchlt",
+      "latency_ms": 28000
+    },
+    {
+      "name": "storebench-f6ddb69cf-qdqcb",
+      "latency_ms": 41000
+    },
+    {
+      "name": "storebench-f6ddb69cf-qr6v9",
+      "latency_ms": 26000
+    },
+    {
+      "name": "storebench-f6ddb69cf-qz46k",
+      "latency_ms": 36000
+    },
+    {
+      "name": "storebench-f6ddb69cf-r2zjg",
+      "latency_ms": 18000
+    },
+    {
+      "name": "storebench-f6ddb69cf-r5qpw",
+      "latency_ms": 21000
+    },
+    {
+      "name": "storebench-f6ddb69cf-r6hx7",
+      "latency_ms": 19000
+    },
+    {
+      "name": "storebench-f6ddb69cf-rdvmp",
+      "latency_ms": 18000
+    },
+    {
+      "name": "storebench-f6ddb69cf-rmdqk",
+      "latency_ms": 33000
+    },
+    {
+      "name": "storebench-f6ddb69cf-rzm6b",
+      "latency_ms": 20000
+    },
+    {
+      "name": "storebench-f6ddb69cf-sdjl8",
+      "latency_ms": 18000
+    },
+    {
+      "name": "storebench-f6ddb69cf-slw8j",
+      "latency_ms": 34000
+    },
+    {
+      "name": "storebench-f6ddb69cf-t5kx4",
+      "latency_ms": 28000
+    },
+    {
+      "name": "storebench-f6ddb69cf-t8rv7",
+      "latency_ms": 28000
+    },
+    {
+      "name": "storebench-f6ddb69cf-tff94",
+      "latency_ms": 34000
+    },
+    {
+      "name": "storebench-f6ddb69cf-tsdlr",
+      "latency_ms": 19000
+    },
+    {
+      "name": "storebench-f6ddb69cf-v6dsx",
+      "latency_ms": 37000
+    },
+    {
+      "name": "storebench-f6ddb69cf-vc45h",
+      "latency_ms": 11000
+    },
+    {
+      "name": "storebench-f6ddb69cf-vf5kn",
+      "latency_ms": 37000
+    },
+    {
+      "name": "storebench-f6ddb69cf-vhmls",
+      "latency_ms": 21000
+    },
+    {
+      "name": "storebench-f6ddb69cf-vklbl",
+      "latency_ms": 12000
+    },
+    {
+      "name": "storebench-f6ddb69cf-w28sw",
+      "latency_ms": 42000
+    },
+    {
+      "name": "storebench-f6ddb69cf-w48gg",
+      "latency_ms": 15000
+    },
+    {
+      "name": "storebench-f6ddb69cf-w58x5",
+      "latency_ms": 22000
+    },
+    {
+      "name": "storebench-f6ddb69cf-w6wqn",
+      "latency_ms": 39000
+    },
+    {
+      "name": "storebench-f6ddb69cf-wpmvr",
+      "latency_ms": 18000
+    },
+    {
+      "name": "storebench-f6ddb69cf-wxnqj",
+      "latency_ms": 20000
+    },
+    {
+      "name": "storebench-f6ddb69cf-wxsfg",
+      "latency_ms": 41000
+    },
+    {
+      "name": "storebench-f6ddb69cf-x4jnf",
+      "latency_ms": 27000
+    },
+    {
+      "name": "storebench-f6ddb69cf-x95sx",
+      "latency_ms": 16000
+    },
+    {
+      "name": "storebench-f6ddb69cf-xhrlp",
+      "latency_ms": 41000
+    },
+    {
+      "name": "storebench-f6ddb69cf-xm69s",
+      "latency_ms": 38000
+    },
+    {
+      "name": "storebench-f6ddb69cf-xnqfn",
+      "latency_ms": 30000
+    },
+    {
+      "name": "storebench-f6ddb69cf-xqrvf",
+      "latency_ms": 23000
+    },
+    {
+      "name": "storebench-f6ddb69cf-xwnm2",
+      "latency_ms": 33000
+    },
+    {
+      "name": "storebench-f6ddb69cf-z8tks",
+      "latency_ms": 21000
+    },
+    {
+      "name": "storebench-f6ddb69cf-zb442",
+      "latency_ms": 16000
+    },
+    {
+      "name": "storebench-f6ddb69cf-zc4h6",
+      "latency_ms": 29000
+    },
+    {
+      "name": "storebench-f6ddb69cf-zgbhg",
+      "latency_ms": 38000
+    },
+    {
+      "name": "storebench-f6ddb69cf-zjjs7",
+      "latency_ms": 39000
+    },
+    {
+      "name": "storebench-f6ddb69cf-zrjm7",
+      "latency_ms": 37000
+    },
+    {
+      "name": "storebench-f6ddb69cf-ztmrl",
+      "latency_ms": 41000
+    },
+    {
+      "name": "storebench-f6ddb69cf-zz2ml",
+      "latency_ms": 23000
+    }
+  ],
+  "kubelet_sli": {
+    "sample_count": 150,
+    "sample_sum": 4122.390618350008,
+    "mean_seconds": 27.482604122333385,
+    "buckets": [
+      {
+        "le": 0.5,
+        "count": 0
+      },
+      {
+        "le": 1,
+        "count": 0
+      },
+      {
+        "le": 2,
+        "count": 0
+      },
+      {
+        "le": 3,
+        "count": 0
+      },
+      {
+        "le": 4,
+        "count": 0
+      },
+      {
+        "le": 5,
+        "count": 0
+      },
+      {
+        "le": 6,
+        "count": 0
+      },
+      {
+        "le": 8,
+        "count": 0
+      },
+      {
+        "le": 10,
+        "count": 0
+      },
+      {
+        "le": 20,
+        "count": 39
+      },
+      {
+        "le": 30,
+        "count": 92
+      },
+      {
+        "le": 45,
+        "count": 150
+      },
+      {
+        "le": 60,
+        "count": 150
+      },
+      {
+        "le": 120,
+        "count": 150
+      },
+      {
+        "le": 180,
+        "count": 150
+      },
+      {
+        "le": 240,
+        "count": 150
+      },
+      {
+        "le": 300,
+        "count": 150
+      },
+      {
+        "le": 360,
+        "count": 150
+      },
+      {
+        "le": 480,
+        "count": 150
+      },
+      {
+        "le": 600,
+        "count": 150
+      },
+      {
+        "le": 900,
+        "count": 150
+      },
+      {
+        "le": 1200,
+        "count": 150
+      },
+      {
+        "le": 1800,
+        "count": 150
+      },
+      {
+        "le": 2700,
+        "count": 150
+      },
+      {
+        "le": 3600,
+        "count": 150
+      }
+    ]
+  }
+}
