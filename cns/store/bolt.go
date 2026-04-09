@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	bolt "go.etcd.io/bbolt"
 )
@@ -195,7 +194,9 @@ func (s *NCBoltStore) GetMeta(_ context.Context) (StoreMeta, error) {
 			m.Initialized = len(v) > 0 && v[0] == 1
 		}
 		if v := b.Get([]byte(metaKeyTimestamp)); v != nil {
-			_ = m.TimeStamp.UnmarshalBinary(v) // best-effort; zero value on failure
+			if err := m.TimeStamp.UnmarshalBinary(v); err != nil {
+				return fmt.Errorf("decode timestamp: %w", err)
+			}
 		}
 		return nil
 	})
@@ -614,10 +615,4 @@ func bytesToUint16(b []byte) uint16 {
 		return 0
 	}
 	return binary.LittleEndian.Uint16(b)
-}
-
-// timestampToBytes converts a time.Time to a reproducible byte slice for
-// storage.  Returns nil on error.
-func timestampToBytes(t time.Time) ([]byte, error) {
-	return t.MarshalBinary()
 }

@@ -5,6 +5,7 @@ package store_test
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"sync"
 	"testing"
@@ -409,9 +410,7 @@ func TestBoltEndpointStore_ListEndpoints(t *testing.T) {
 
 	for i, id := range []string{"c1", "c2", "c3"} {
 		ep := sampleEndpoint("pod-"+id, "default")
-		// Give each endpoint a distinct IP to avoid map key collisions in the
-		// IPNet comparison.
-		ep.IfnameToIPMap["eth0"].IPv4[0].IP = net.ParseIP("10.0.0." + string(rune('1'+i)))
+		ep.IfnameToIPMap["eth0"].IPv4[0].IP = net.ParseIP(fmt.Sprintf("10.0.0.%d", i+1))
 		require.NoError(t, s.PutEndpoint(ctx, id, ep))
 	}
 
@@ -476,20 +475,29 @@ func TestBoltNCStore_ConcurrentWriteRead(t *testing.T) {
 	s := openTestNCStore(t)
 
 	var wg sync.WaitGroup
+	errs := make(chan error, 20)
 	for i := 0; i < 10; i++ {
 		wg.Add(2)
 		idx := i
 		go func() {
 			defer wg.Done()
 			addr := net.IPv4(10, 0, 0, byte(idx+1)).String()
-			_ = s.PutIP(ctx, sampleIP(addr, "nc-cw"))
+			if err := s.PutIP(ctx, sampleIP(addr, "nc-cw")); err != nil {
+				errs <- err
+			}
 		}()
 		go func() {
 			defer wg.Done()
-			_, _ = s.ListIPs(ctx)
+			if _, err := s.ListIPs(ctx); err != nil {
+				errs <- err
+			}
 		}()
 	}
 	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Errorf("concurrent operation failed: %v", err)
+	}
 }
 
 // ---- BucketReadWriter low-level API ----
@@ -609,4 +617,103 @@ func TestBoltEndpointStore_SchemaMismatch(t *testing.T) {
 
 	_, err = store.OpenEndpointStore(path, nil)
 	require.ErrorIs(t, err, store.ErrSchemaMismatch)
+}
+
+// ---- Upsert (overwrite) ----
+
+func TestBoltNCStore_PutNC_Overwrite(t *testing.T) {
+	ctx := context.Background()
+	s := openTestNCStore(t)
+
+	nc := sampleNC("nc-upsert")
+	require.NoError(t, s.PutNC(ctx, nc))
+
+	nc.HostPrimaryIP = "10.99.99.99"
+	nc.VfpUpdateComplete = false
+	require.NoError(t, s.PutNC(ctx, nc))
+
+	got, err := s.GetNC(ctx, "nc-upsert")
+	require.NoError(t, err)
+	assert.Equal(t, "10.99.99.99", got.HostPrimaryIP)
+	assert.False(t, got.VfpUpdateComplete)
+
+	ncs, err := s.ListNCs(ctx)
+	require.NoError(t, err)
+	assert.Len(t, ncs, 1, "overwrite should not create a second entry")
+}
+
+func TestBoltEndpointStore_PutEndpoint_Overwrite(t *testing.T) {
+	ctx := context.Background()
+	s := openTestEndpointStore(t)
+
+	require.NoError(t, s.PutEndpoint(ctx, "cid-1", sampleEndpoint("pod-v1", "ns")))
+
+	updated := sampleEndpoint("pod-v2", "ns-updated")
+	require.NoError(t, s.PutEndpoint(ctx, "cid-1", updated))
+
+	got, err := s.GetEndpoint(ctx, "cid-1")
+	require.NoError(t, err)
+	assert.Equal(t, "pod-v2", got.PodName)
+	assert.Equal(t, "ns-updated", got.PodNamespace)
+
+	eps, err := s.ListEndpoints(ctx)
+	require.NoError(t, err)
+	assert.Len(t, eps, 1, "overwrite should not create a second entry")
+}
+
+// ---- Corrupt timestamp ----
+
+func TestBoltNCStore_GetMeta_CorruptTimestamp(t *testing.T) {
+	path := t.TempDir() + "/corrupt-ts.db"
+	s, err := store.OpenNCStore(path, nil)
+	require.NoError(t, err)
+
+	require.NoError(t, s.PutMeta(context.Background(), store.StoreMeta{NodeID: "n1"}))
+	s.Close()
+
+	// Corrupt the timestamp key.
+	db, err := bolt.Open(path, 0o600, nil)
+	require.NoError(t, err)
+	err = db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket([]byte("meta")).Put([]byte("timestamp"), []byte{0xFF})
+	})
+	require.NoError(t, err)
+	db.Close()
+
+	s2, err := store.OpenNCStore(path, nil)
+	require.NoError(t, err)
+	defer s2.Close()
+
+	_, err = s2.GetMeta(context.Background())
+	require.Error(t, err, "GetMeta should return error on corrupt timestamp")
+}
+
+// ---- Concurrent writes ----
+
+func TestBoltNCStore_ConcurrentWrites(t *testing.T) {
+	ctx := context.Background()
+	s := openTestNCStore(t)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 20)
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		idx := i
+		go func() {
+			defer wg.Done()
+			addr := net.IPv4(10, 0, 0, byte(idx+1)).String()
+			if err := s.PutIP(ctx, sampleIP(addr, "nc-cw")); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Errorf("concurrent write failed: %v", err)
+	}
+
+	ips, err := s.ListIPs(ctx)
+	require.NoError(t, err)
+	assert.Len(t, ips, 20)
 }
