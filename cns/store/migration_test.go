@@ -364,3 +364,32 @@ func TestNCRecord_JSONFidelity(t *testing.T) {
 	require.NoError(t, json.Unmarshal(got.OrchestratorContext, &outCtx))
 	assert.Equal(t, inCtx, outCtx)
 }
+
+func TestMigrateEndpointState_IPNetMaskPreserved(t *testing.T) {
+	ctx := context.Background()
+	jsonPath := copyTestdata(t, "azure-endpoints.json")
+
+	s, err := store.OpenEndpointStore(t.TempDir()+"/ep-mask.db", nil)
+	require.NoError(t, err)
+	defer s.Close()
+
+	require.NoError(t, store.MigrateEndpointState(ctx, jsonPath, s))
+
+	eps, err := s.ListEndpoints(ctx)
+	require.NoError(t, err)
+
+	// Verify at least one endpoint has a non-nil mask after migration.
+	found := false
+	for _, ep := range eps {
+		for _, ipInfo := range ep.IfnameToIPMap {
+			for _, ipNet := range ipInfo.IPv4 {
+				require.NotNil(t, ipNet.Mask, "IPv4 mask should not be nil after migration")
+				ones, bits := ipNet.Mask.Size()
+				assert.Positive(t, ones, "mask should have non-zero prefix length")
+				assert.Equal(t, 32, bits, "IPv4 mask should be 32-bit")
+				found = true
+			}
+		}
+	}
+	assert.True(t, found, "should have found at least one IPv4 address to check mask")
+}

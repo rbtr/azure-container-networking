@@ -6,8 +6,12 @@ package store
 // Migration from the legacy JSON statefiles to boltdb.
 //
 // Design principles:
-//   - Migration is idempotent: a second run is a no-op once the boltdb already
-//     has data (detected via schema version in the meta bucket).
+//   - Migration is idempotent: a completion marker in the meta bucket gates
+//     reruns. Once the marker is set, subsequent calls are no-ops regardless
+//     of whether the source file exists.
+//   - Migration is merge/upsert: if the destination already contains records
+//     (e.g. from a partial previous run), they are overwritten with the values
+//     from the JSON file. Pre-existing keys not in the JSON file are preserved.
 //   - On success the old JSON file is renamed to "<path>.migrated" as a backup;
 //     it is not deleted.  Operators may prune it at their discretion.
 //   - Migration failures return an error and leave the source file untouched.
@@ -146,8 +150,7 @@ type jsonIPInfo struct {
 // the NC, IP, network and metadata records into dst.
 //
 // If jsonPath does not exist the function returns nil (clean-slate node).
-// If dst already contains data (schema version present and NC count > 0) the
-// function returns nil without modifying dst (idempotent).
+// If the completion marker is already set, the function returns nil (idempotent).
 //
 // On success jsonPath is renamed to jsonPath+".migrated".
 func MigrateCNSState(ctx context.Context, jsonPath string, dst *NCBoltStore) error {
@@ -174,10 +177,10 @@ func MigrateCNSState(ctx context.Context, jsonPath string, dst *NCBoltStore) err
 	stateRaw, ok := envelope["ContainerNetworkService"]
 	if !ok {
 		// File exists but has no CNS key — treat as empty.
-		if err := renameOldFile(jsonPath); err != nil {
+		if err := setMigrationComplete(dst, migrationKeyCNSStateComplete); err != nil {
 			return err
 		}
-		return setMigrationComplete(dst, migrationKeyCNSStateComplete)
+		return renameOldFile(jsonPath)
 	}
 
 	var state jsonCNSState
@@ -280,11 +283,13 @@ func MigrateCNSState(ctx context.Context, jsonPath string, dst *NCBoltStore) err
 		}
 	}
 
-	if err := renameOldFile(jsonPath); err != nil {
+	// Set the completion marker before renaming the source file. This ensures
+	// that if rename fails, the marker prevents stale JSON from being replayed.
+	if err := setMigrationComplete(dst, migrationKeyCNSStateComplete); err != nil {
 		return err
 	}
 
-	return setMigrationComplete(dst, migrationKeyCNSStateComplete)
+	return renameOldFile(jsonPath)
 }
 
 // ---- MigrateEndpointState ----
@@ -293,7 +298,7 @@ func MigrateCNSState(ctx context.Context, jsonPath string, dst *NCBoltStore) err
 // and writes endpoint records into dst.
 //
 // If jsonPath does not exist the function returns nil.
-// If dst already has endpoints the function returns nil (idempotent).
+// If the completion marker is already set, the function returns nil (idempotent).
 //
 // On success jsonPath is renamed to jsonPath+".migrated".
 func MigrateEndpointState(ctx context.Context, jsonPath string, dst *EndpointBoltStore) error {
@@ -318,10 +323,10 @@ func MigrateEndpointState(ctx context.Context, jsonPath string, dst *EndpointBol
 
 	stateRaw, ok := envelope["Endpoints"]
 	if !ok {
-		if err := renameOldFile(jsonPath); err != nil {
+		if err := setMigrationComplete(dst, migrationKeyEndpointStateComplete); err != nil {
 			return err
 		}
-		return setMigrationComplete(dst, migrationKeyEndpointStateComplete)
+		return renameOldFile(jsonPath)
 	}
 
 	var state jsonEndpointState
@@ -358,11 +363,12 @@ func MigrateEndpointState(ctx context.Context, jsonPath string, dst *EndpointBol
 		}
 	}
 
-	if err := renameOldFile(jsonPath); err != nil {
+	// Set the completion marker before renaming the source file.
+	if err := setMigrationComplete(dst, migrationKeyEndpointStateComplete); err != nil {
 		return err
 	}
 
-	return setMigrationComplete(dst, migrationKeyEndpointStateComplete)
+	return renameOldFile(jsonPath)
 }
 
 // ---- helpers ----

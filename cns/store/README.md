@@ -94,7 +94,7 @@ Post-disruption, CNS state and actual pod IPs may temporarily disagree. The test
 | Migration from JSON | ✅ Done | `MigrateCNSState`, `MigrateEndpointState` with idempotent marker system |
 | Test hardening (state validation) | ✅ Proposed upstream | Convergence loop, detailed IP comparison, summary emission, baseline regression detection |
 | E2E validation pipeline (M0) | ✅ In follow up | JSON-baseline lanes with state validation after each disruption |
-| Pipeline migration lanes (M1-M3) | 🔧 In bolt branch | Full matrix across modes × disruptions × topologies |
+| Pipeline migration lanes (M1-M3) | 🔧 In feat/bolt-store branch | Full matrix across modes × disruptions × topologies |
 | Runtime integration | ❌ Not started | Wire bolt stores into CNS restserver startup, replacing json file store |
 | Gradual rollout | ❌ Not started | Feature flag in cns_config.json, staged AKS rollout |
 
@@ -102,7 +102,7 @@ Post-disruption, CNS state and actual pod IPs may temporarily disagree. The test
 
 1. **Runtime integration**: Replace the JSON file store calls in `cns/restserver/` with bolt store calls. This is the point where CNS actually starts using boltdb in production. Requires careful wiring around initialization order and the existing `Store` interface in `store/` (the old package — not this one).
 
-2. **Pipeline M1-M3 lanes**: The `set-cns-state-mode-template.yaml` patches the CNS configmap to enable migration mode. The `cniv2-template.yaml` has the `state_matrix_guard` job that enforces mode coverage. These are staged in the bolt branch pending the runtime integration.
+2. **Pipeline M1-M3 lanes**: The `set-cns-state-mode-template.yaml` patches the CNS configmap to enable migration mode. The `cniv2-template.yaml` has the `state_matrix_guard` job that enforces mode coverage. These are staged in the feat/bolt-store branch pending the runtime integration.
 
 3. **Feature flag & gradual rollout**: A config knob (`stateStoreBackend: "bolt"`) in cns_config.json to control which nodes use the new store. Initial rollout targets canary rings before broad enablement.
 
