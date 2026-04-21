@@ -3,7 +3,11 @@ set -e
 
 RESOURCE_GROUP=$1
 BUILD_SOURCE_DIR=$2
+SUBSCRIPTION_ID=$3
 BICEP_TEMPLATE_PATH="${BUILD_SOURCE_DIR}/Networking-Aquarius/.pipelines/singularity-runner/byon/linux.bicep"
+
+echo "Setting active subscription to $SUBSCRIPTION_ID"
+az account set --subscription "$SUBSCRIPTION_ID"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/byon_helper.sh"
@@ -19,10 +23,22 @@ create_linux_vmss() {
   local kubeconfig_secret="${RESOURCE_GROUP}-${cluster_name}-kubeconfig"
                
   echo "Creating Linux VMSS Node '${node_name}' for cluster '${cluster_name}'"
+
+  # Skip if VMSS already exists
+  if check_vmss_exists "$RESOURCE_GROUP" "$node_name" 2>/dev/null; then
+    echo "VMSS '$node_name' already exists. Skipping creation."
+    return 0
+  fi
+
+  # Only fetch SSH key when we actually need to create
+  local ssh_public_key
+  ssh_public_key=$(get_ssh_public_key "$SSH_PUBLIC_KEY_SECRET_NAME" "$CLUSTER_KUBECONFIG_KEYVAULT_NAME" "$KEY_VAULT_SUBSCRIPTION")
+
   set +e
   az deployment group create -n "sat${node_name}" \
     --resource-group "$RESOURCE_GROUP" \
     --template-file "$BICEP_TEMPLATE_PATH" \
+    --mode Incremental \
     --parameters vnetname="$cluster_name" \
                 subnetname="nodenet" \
                 name="$node_name" \
@@ -63,13 +79,12 @@ label_vmss_nodes() {
   copy_managed_node_labels_to_byon "$kubeconfig_file"
 }
 
-ssh_public_key=$(get_ssh_public_key "$SSH_PUBLIC_KEY_SECRET_NAME" "$CLUSTER_KUBECONFIG_KEYVAULT_NAME" "$KEY_VAULT_SUBSCRIPTION")
 cluster_names="aks-1 aks-2"
 
 for cluster_name in $cluster_names; do
   upload_kubeconfig "$cluster_name"
   echo "Installing CNI plugins for cluster $cluster_name"
-  if ! helm install -n kube-system azure-cni-plugins ${BUILD_SOURCE_DIR}/Networking-Aquarius/.pipelines/singularity-runner/byon/chart/base \
+  if ! helm upgrade --install -n kube-system azure-cni-plugins ${BUILD_SOURCE_DIR}/Networking-Aquarius/.pipelines/singularity-runner/byon/chart/base \
         --set installCniPlugins.enabled=true \
         --kubeconfig "./kubeconfig-${cluster_name}"; then
     echo "##vso[task.logissue type=error]Failed to install CNI plugins for cluster ${cluster_name}"

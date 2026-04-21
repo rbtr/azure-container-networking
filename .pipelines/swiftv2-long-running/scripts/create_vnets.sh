@@ -59,6 +59,13 @@ create_vnet_subets() {
   for i in "${!extra_subnet_array[@]}"; do
     subnet_name="${extra_subnet_array[$i]}"
     subnet_cidr="${extra_cidr_array[$i]}"
+
+    # Skip if subnet already exists
+    if az network vnet subnet show -g "$RG" --vnet-name "$vnet" -n "$subnet_name" &>/dev/null; then
+      echo "Subnet $subnet_name already exists in $vnet. Skipping."
+      continue
+    fi
+
     echo "Creating extra subnet: $subnet_name with CIDR: $subnet_cidr"
     
     # Only delegate pod subnets (not private endpoint subnets)
@@ -81,8 +88,20 @@ delegate_subnet() {
     local max_attempts=7
     local attempt=1
     
-    echo "Delegating subnet: $subnet in VNet: $vnet to Subnet Delegator"
+    local subnet_id
     subnet_id=$(az network vnet subnet show -g "$RG" --vnet-name "$vnet" -n "$subnet" --query id -o tsv)
+
+    # Check if SAL already exists — skip expensive delegation if so
+    local sal
+    sal=$(az rest --method get \
+      --url "${subnet_id}?api-version=2024-05-01" \
+      2>/dev/null | jq -r '.properties.serviceAssociationLinks[0].name // empty')
+    if [[ -n "$sal" ]]; then
+      echo "SAL already exists on $subnet in $vnet (name: $sal). Skipping delegation."
+      return 0
+    fi
+
+    echo "Delegating subnet: $subnet in VNet: $vnet to Subnet Delegator"
     modified_custsubnet="${subnet_id//\//%2F}"
     
     responseFile="delegate_response.txt"
