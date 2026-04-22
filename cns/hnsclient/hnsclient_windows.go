@@ -636,7 +636,9 @@ func getHostNCApipaEndpointName(
 	return hostNCApipaEndpointNamePrefix + "-" + networkContainerID
 }
 
-func deleteNetworkByIDHnsV2(
+// DeleteNetworkByIDHnsV2 deletes an HNS network by its ID.
+// Returns nil if the network is already deleted (idempotent).
+func DeleteNetworkByIDHnsV2(
 	networkID string) error {
 	var (
 		network *hcn.HostComputeNetwork
