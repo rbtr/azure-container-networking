@@ -381,6 +381,18 @@ stages:
         k8sVersion: ""
         dependsOn: ["test"]
 
+    # Cilium EBPF Dualstack Overlay E2E tests
+    - template: singletenancy/cilium-dualstack-ebpf/cilium-dualstack-e2e-job-template.yaml
+      parameters:
+        name: "cilium_ebpf_ds_e2e"
+        displayName: Cilium EBPF on AKS DualStack Overlay
+        os: linux
+        clusterType: dualstack-byocni-nokubeproxy-up
+        clusterName: "cilbpfdse2e"
+        vmSize: Standard_B2ms
+        k8sVersion: ""
+        dependsOn: ["test"]        
+
     # Cilium Overlay with hubble E2E tests
     - template: singletenancy/cilium-overlay-withhubble/cilium-overlay-e2e-job-template.yaml
       parameters:
@@ -526,6 +538,7 @@ stages:
         - cilium_ebpf_overlay_e2e
         - cilium_dualstackoverlay_e2e
         - cilium_h_overlay_e2e
+        - cilium_ebpf_ds_e2e
       variables:
         commitID: $[ stagedependencies.setup.env.outputs['EnvironmentalVariables.commitID'] ]
       pool:
@@ -535,6 +548,10 @@ stages:
           displayName: Delete Cluster
           strategy:
             matrix:
+              cilium_ebpf_dualstack_overlay:
+                cluster_name: cilbpfdse2e
+                delete_name: cilium_ebpf_ds_e2e
+                delete_region: $(REGION_DUALSTACKOVERLAY_CLUSTER_TEST)
               cilium_podsubnet:
                 cluster_name: ciliume2e
                 delete_name: cilium_e2e

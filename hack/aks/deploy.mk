@@ -13,6 +13,8 @@ CILIUM_NIGHTLY_VERSION_TAG 				?= cilium-nightly-pipeline
 EBPF_CILIUM_DIR				     		?= 1.17
 # we don't use CILIUM_VERSION_TAG or CILIUM_IMAGE_REGISTRY because we want to use the version supported by ebpf
 EBPF_CILIUM_IMAGE_REGISTRY           	?= mcr.microsoft.com/containernetworking
+IPV6_HP_BPF_VERSION               		?= v0.0.1
+IPV6_IMAGE_REGISTRY           			?= mcr.microsoft.com/containernetworking
 EBPF_CILIUM_VERSION_TAG               	?= v1.17.7-250927
 AZURE_IPTABLES_MONITOR_IMAGE_REGISTRY	?= mcr.microsoft.com/containernetworking
 AZURE_IPTABLES_MONITOR_TAG          	?= v0.0.3
@@ -133,12 +135,20 @@ deploy-common-ebpf-cilium:
 	@kubectl apply -f ../../test/integration/manifests/cilium/v$(EBPF_CILIUM_DIR)/cilium-operator/files/
 # set cilium version tag and registry here so they are visible as env vars to envsubst
 	CILIUM_VERSION_TAG=$(EBPF_CILIUM_VERSION_TAG) CILIUM_IMAGE_REGISTRY=$(EBPF_CILIUM_IMAGE_REGISTRY) \
-		envsubst '$${CILIUM_VERSION_TAG},$${CILIUM_IMAGE_REGISTRY},$${IPV6_HP_BPF_VERSION}' < \
+		envsubst '$${CILIUM_VERSION_TAG},$${CILIUM_IMAGE_REGISTRY},$${IPV6_HP_BPF_VERSION},$${IPV6_IMAGE_REGISTRY}' < \
 		../../test/integration/manifests/cilium/v$(EBPF_CILIUM_DIR)/cilium-operator/templates/deployment.yaml \
 		| kubectl apply -f -
 	@kubectl apply -f ../../test/integration/manifests/cilium/v$(EBPF_CILIUM_DIR)/ebpf/common/ciliumclusterwidenetworkpolicies.yaml
 	@kubectl wait --for=condition=Established crd/ciliumclusterwidenetworkpolicies.cilium.io
 	@kubectl apply -f ../../test/integration/manifests/cilium/v$(EBPF_CILIUM_DIR)/ebpf/common/
+
+deploy-ebpf-dualstack-cilium: print-ebpf-cilium-vars deploy-common-ebpf-cilium
+	@kubectl apply -f ../../test/integration/manifests/cilium/v$(EBPF_CILIUM_DIR)/ebpf/dualstack/static/
+	CILIUM_VERSION_TAG=$(EBPF_CILIUM_VERSION_TAG) CILIUM_IMAGE_REGISTRY=$(EBPF_CILIUM_IMAGE_REGISTRY) \
+                envsubst '$${CILIUM_VERSION_TAG},$${CILIUM_IMAGE_REGISTRY},$${IPV6_HP_BPF_VERSION},$${IPV6_IMAGE_REGISTRY},$${AZURE_IPTABLES_MONITOR_IMAGE_REGISTRY},$${AZURE_IPTABLES_MONITOR_TAG},$${AZURE_IP_MASQ_MERGER_IMAGE_REGISTRY},$${AZURE_IP_MASQ_MERGER_TAG}' < \
+                ../../test/integration/manifests/cilium/v$(EBPF_CILIUM_DIR)/ebpf/dualstack/cilium.yaml \
+                | kubectl apply -f -
+	@$(MAKE) wait-for-cilium
 
 deploy-ebpf-overlay-cilium: print-ebpf-cilium-vars deploy-common-ebpf-cilium
 	@kubectl apply -f ../../test/integration/manifests/cilium/v$(EBPF_CILIUM_DIR)/ebpf/overlay/static/
