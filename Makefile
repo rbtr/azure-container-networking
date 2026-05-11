@@ -1015,6 +1015,10 @@ gocov: ## Install gocov .out > .json
 gocov-xml: ## Install gocov-xml .json > .xml
 	@GOWORK=off go install -modfile=$(TOOLS_GO_MOD) github.com/AlekSi/gocov-xml
 
+nodeinit-bench: ## Build tools/nodeinit-bench into bin/
+	@mkdir -p bin
+	@go build -o bin/nodeinit-bench ./tools/nodeinit-bench
+
 ##@ Help
 
 help: ## Display this help

@@ -386,6 +386,7 @@ func (service *HTTPRestService) Stop() {
 // a conflist generator. If not, this is a no-op.
 func (service *HTTPRestService) MustGenerateCNIConflistOnce() {
 	service.generateCNIConflistOnce.Do(func() {
+		logger.Printf("[Azure CNS] Generating CNI conflist.")
 		if err := service.cniConflistGenerator.Generate(); err != nil {
 			panic("unable to generate cni conflist with error: " + err.Error())
 		}
@@ -393,6 +394,7 @@ func (service *HTTPRestService) MustGenerateCNIConflistOnce() {
 		if err := service.cniConflistGenerator.Close(); err != nil {
 			panic("unable to close the cni conflist output stream: " + err.Error())
 		}
+		logger.Printf("[Azure CNS] CNI conflist generated.")
 	})
 }
 

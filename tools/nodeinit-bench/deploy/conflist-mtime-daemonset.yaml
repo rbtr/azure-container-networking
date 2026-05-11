@@ -1,0 +1,116 @@
+# conflist-mtime-daemonset
+#
+# Bridges the one native CNS observability gap: CNS does not log when it
+# writes the CNI conflist. This DaemonSet watches the directory on the host
+# where CNS drops the conflist and publishes its mtime as a Node annotation
+# that nodeinit-bench reads during collection.
+#
+# Annotation key: nodeinit-bench/cni-conflist-mtime
+# Value format  : RFC3339Nano (UTC)
+#
+# Adjust CONFLIST_PATH below if CNS is configured with a non-default
+# CNIConflistFilepath.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nodeinit-bench-conflist
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nodeinit-bench-conflist
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nodeinit-bench-conflist
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nodeinit-bench-conflist
+subjects:
+  - kind: ServiceAccount
+    name: nodeinit-bench-conflist
+    namespace: kube-system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nodeinit-bench-conflist
+  namespace: kube-system
+  labels:
+    app: nodeinit-bench-conflist
+spec:
+  selector:
+    matchLabels:
+      app: nodeinit-bench-conflist
+  template:
+    metadata:
+      labels:
+        app: nodeinit-bench-conflist
+    spec:
+      serviceAccountName: nodeinit-bench-conflist
+      hostNetwork: true
+      hostPID: false
+      tolerations:
+        - operator: Exists
+      nodeSelector:
+        kubernetes.io/os: linux
+      containers:
+        - name: mtime-reporter
+          image: mcr.microsoft.com/azurelinux/base/core:3.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 0
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: CONFLIST_DIR
+              value: /host/etc/cni/net.d
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+              CACERT=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              API="https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT}"
+              last=""
+              while true; do
+                # Find the newest *.conflist file in the directory and report its
+                # mtime. CNS may write 15-azure-swift-overlay.conflist (overlay)
+                # or 05-cilium.conflist (cilium overlay) depending on scenario,
+                # so we don't hardcode the filename.
+                newest=$(ls -t "$CONFLIST_DIR"/*.conflist 2>/dev/null | head -n 1 || true)
+                if [ -n "$newest" ] && [ -f "$newest" ]; then
+                  mtime_iso=$(TZ=UTC date -u -d "@$(stat -c %Y "$newest")" +"%Y-%m-%dT%H:%M:%SZ")
+                  if [ "$mtime_iso" != "$last" ]; then
+                    patch='{"metadata":{"annotations":{"nodeinit-bench/cni-conflist-mtime":"'"$mtime_iso"'"}}}'
+                    if curl -sS --fail --cacert "$CACERT" \
+                         -H "Authorization: Bearer $TOKEN" \
+                         -H "Content-Type: application/strategic-merge-patch+json" \
+                         -X PATCH --data-raw "$patch" \
+                         "$API/api/v1/nodes/$NODE_NAME" >/dev/null; then
+                      last="$mtime_iso"
+                    fi
+                  fi
+                fi
+                sleep 1
+              done
+          volumeMounts:
+            - name: etc-cni-netd
+              mountPath: /host/etc/cni/net.d
+              readOnly: true
+      volumes:
+        - name: etc-cni-netd
+          hostPath:
+            path: /etc/cni/net.d
+            type: Directory
