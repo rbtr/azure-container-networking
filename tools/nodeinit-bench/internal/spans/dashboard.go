@@ -60,7 +60,15 @@ func writeDashboard(path string, runs []NodeRun) error {
 			T0:    r.T0.UTC().Format(time.RFC3339Nano),
 		}
 		for _, id := range OrderedSpans {
-			sp := r.Spans[id]
+			sp, found := r.Spans[id]
+			if !found {
+				sp = Span{ID: id, Source: "not-observed", Missing: true}
+			}
+			// A zero-time span is functionally missing; guard against
+			// emitters that leave Missing=false.
+			if !sp.Missing && (sp.Start.IsZero() || sp.End.IsZero()) {
+				sp.Missing = true
+			}
 			pt := spanPoint{ID: string(id), Inferred: sp.Inferred, Missing: sp.Missing}
 			if !sp.Missing {
 				pt.Start = sp.Start.UTC().Format(time.RFC3339Nano)

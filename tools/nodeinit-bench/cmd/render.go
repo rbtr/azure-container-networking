@@ -108,8 +108,18 @@ func loadRuns(dir string, nextID *int) ([]spans.NodeRun, error) {
 		if err != nil {
 			return nil, fmt.Errorf("spans row: %w", err)
 		}
-		// run_id,node,pod,t0,span,start,end,duration_s,source,inferred,missing
-		if len(row) < 11 {
+		// Two CSV layouts exist:
+		//   Old (11 cols): run_id,node,pod,t0,span,start,end,duration_s,source,inferred,missing
+		//   New (17 cols): run_id,node,pod,t0,boot_state,channel_mode,ipam_v2,swift_v2,
+		//                  manage_endpoint_state,dual_stack,span,start,end,duration_s,source,inferred,missing
+		// Detect the layout by column count and pick the right indices.
+		var iSpan, iStart, iEnd, iSource, iInferred, iMissing int
+		switch {
+		case len(row) >= 17:
+			iSpan, iStart, iEnd, iSource, iInferred, iMissing = 10, 11, 12, 14, 15, 16
+		case len(row) >= 11:
+			iSpan, iStart, iEnd, iSource, iInferred, iMissing = 4, 5, 6, 8, 9, 10
+		default:
 			continue
 		}
 		origRunID, _ := strconv.Atoi(row[0])
@@ -125,18 +135,40 @@ func loadRuns(dir string, nextID *int) ([]spans.NodeRun, error) {
 				T0:      t0,
 				Spans:   map[spans.SpanID]spans.Span{},
 			}
+			// Carry the per-run mode/boot metadata over when the
+			// new 17-column layout is present so cross-run grouping
+			// and dashboard filters still work after a reload.
+			if len(row) >= 17 {
+				nr.BootState = row[4]
+				nr.Mode = map[string]string{
+					"channel_mode":           row[5],
+					"ipam_v2":                row[6],
+					"swift_v2":               row[7],
+					"manage_endpoint_state":  row[8],
+					"dual_stack":             row[9],
+				}
+			}
 			*nextID++
 			byKey[k] = nr
 		}
 		sp := spans.Span{
-			ID:       spans.SpanID(row[4]),
-			Source:   row[8],
-			Inferred: row[9] == "true",
-			Missing:  row[10] == "true",
+			ID:       spans.SpanID(row[iSpan]),
+			Source:   row[iSource],
+			Inferred: row[iInferred] == "true",
+			Missing:  row[iMissing] == "true",
 		}
-		if !sp.Missing && row[5] != "" && row[6] != "" {
-			sp.Start, _ = time.Parse(time.RFC3339Nano, row[5])
-			sp.End, _ = time.Parse(time.RFC3339Nano, row[6])
+		if !sp.Missing && row[iStart] != "" && row[iEnd] != "" {
+			sp.Start, _ = time.Parse(time.RFC3339Nano, row[iStart])
+			sp.End, _ = time.Parse(time.RFC3339Nano, row[iEnd])
+		}
+		// Newer span emitters write empty start/end columns when the
+		// underlying source signal was not observed (e.g. CNS metric
+		// gauges from PR #4398 that aren't emitted by older CNS
+		// builds), but leave the missing flag as false. Promote that
+		// to Missing so the dashboard hides them rather than plotting
+		// time-zero as INT64_MIN.
+		if !sp.Missing && (sp.Start.IsZero() || sp.End.IsZero()) {
+			sp.Missing = true
 		}
 		// Detect legacy dnc-rc-create-nnc (start == submit, before T0):
 		// remember the submit time and rewrite the span to start at T0

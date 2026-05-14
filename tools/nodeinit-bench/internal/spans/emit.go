@@ -51,13 +51,29 @@ func writeCSV(path string, runs []NodeRun) error {
 	for _, r := range runs {
 		mode := r.Mode
 		for _, id := range OrderedSpans {
-			sp := r.Spans[id]
+			sp, found := r.Spans[id]
+			if !found {
+				// Defensive: nodeinit-bench iterates OrderedSpans
+				// when emitting, but spans that never fired (e.g.
+				// CNS-metric-derived gauges that aren't emitted by
+				// the deployed CNS build yet) won't have a map
+				// entry. Mark them Missing so the dashboard hides
+				// them rather than rendering at time-zero.
+				sp = Span{ID: id, Source: "not-observed", Missing: true}
+			}
 			var start, end string
 			if !sp.Start.IsZero() {
 				start = sp.Start.UTC().Format(time.RFC3339Nano)
 			}
 			if !sp.End.IsZero() {
 				end = sp.End.UTC().Format(time.RFC3339Nano)
+			}
+			// A span emitted as default-Go-zero is functionally
+			// missing too; the run-time observer should mark it
+			// missing explicitly, but enforce it here so the CSV
+			// never claims a non-missing zero-time span.
+			if !sp.Missing && (sp.Start.IsZero() || sp.End.IsZero()) {
+				sp.Missing = true
 			}
 			dur := ""
 			if !sp.Missing {
