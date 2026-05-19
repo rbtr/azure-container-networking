@@ -13,6 +13,61 @@ FROM mcr.microsoft.com/azurelinux/base/core@sha256:35149ae8dd179684f969944f54a33
 # mcr.microsoft.com/azurelinux/distroless/minimal:3.0
 FROM mcr.microsoft.com/azurelinux/distroless/minimal@sha256:5a66f9f16ac675db2a8229dac72d83811b73b502d6ad192d8b374c7f3be498af AS mariner-distroless
 
+# ------------------------------------------------------------------
+# payload stage
+#
+# Builds the CNI plugin binaries (azure-vnet, azure-vnet-ipam,
+# azure-vnet-telemetry) and the azure-ipam delegated-IPAM plugin,
+# then assembles them into cns/embed/fs/ as gzipped files with a
+# sum.txt manifest of pre-compression sha256 sums.
+#
+# The CNS Go binary embeds cns/embed/fs/ via //go:embed in the next
+# stage, so the resulting azure-cns image contains the CNI binaries
+# and can extract them via `cns deploy` (or automatically during
+# daemon bootstrap), replacing the historical cni-dropgz init
+# container.
+# ------------------------------------------------------------------
+FROM --platform=linux/${ARCH} go AS payload
+ARG OS
+ARG VERSION
+WORKDIR /src
+COPY . .
+# Build each binary statically. CGO_ENABLED=0 matches the other ACN
+# image builds.
+RUN GOOS=$OS CGO_ENABLED=0 go build -a -trimpath \
+        -o /payload/azure-vnet \
+        -ldflags "-s -w -X main.version=$VERSION" \
+        cni/network/plugin/main.go
+RUN GOOS=$OS CGO_ENABLED=0 go build -a -trimpath \
+        -o /payload/azure-vnet-ipam \
+        -ldflags "-s -w -X main.version=$VERSION" \
+        cni/ipam/plugin/main.go
+RUN GOOS=$OS CGO_ENABLED=0 go build -a -trimpath \
+        -o /payload/azure-vnet-telemetry \
+        -ldflags "-s -w -X main.version=$VERSION" \
+        cni/telemetry/service/telemetrymain.go
+RUN cd azure-ipam && GOOS=$OS CGO_ENABLED=0 go build -a -trimpath \
+        -o /payload/azure-ipam \
+        -ldflags "-s -w -X github.com/Azure/azure-container-networking/azure-ipam/internal/buildinfo.Version=$VERSION" \
+        ./
+# sum.txt records the *pre-compression* sha256 of each file.
+# gzip --best -r leaves the .gz suffix on each entry; we strip it so
+# the names match what cns/embed/payload.go expects.
+# sum.txt itself must NOT be gzipped — the runtime decodes it as
+# plaintext via cnsembed.Extract("sum.txt", cnsembed.None).
+RUN cd /payload \
+    && sha256sum azure-vnet azure-vnet-ipam azure-vnet-telemetry azure-ipam > sum.txt \
+    && gzip --best azure-vnet azure-vnet-ipam azure-vnet-telemetry azure-ipam \
+    && for f in *.gz; do mv "$f" "${f%.gz}"; done
+
+# ------------------------------------------------------------------
+# builder stage
+#
+# Drops the gzipped payload into cns/embed/fs/ before invoking
+# `go build` so the //go:embed in cns/embed/payload.go picks up the
+# real files (it is a no-op embed when fs/ contains only _README
+# and the placeholder sum.txt).
+# ------------------------------------------------------------------
 FROM --platform=linux/${ARCH} go AS builder
 ARG OS
 ARG CNS_AI_ID
@@ -20,6 +75,7 @@ ARG CNS_AI_PATH
 ARG VERSION
 WORKDIR /azure-container-networking
 COPY . .
+COPY --from=payload /payload/ cns/embed/fs/
 RUN GOOS=$OS CGO_ENABLED=0 go build -a -o /go/bin/azure-cns -ldflags "-s -w -X main.version="$VERSION" -X "$CNS_AI_PATH"="$CNS_AI_ID"" -gcflags="-dwarflocationlists=true" cns/service/*.go
 
 FROM mariner-core AS iptables

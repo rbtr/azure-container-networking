@@ -1,0 +1,6 @@
+# The fs/ directory is populated at image-build time by cns/Dockerfile
+# payload stage. Source control ships only the placeholders.
+*
+!_README
+!sum.txt
+!.gitignore

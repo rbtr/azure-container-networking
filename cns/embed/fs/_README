@@ -1,0 +1,16 @@
+This directory holds the build-time payload embedded into the CNS
+binary. At build, the CNS image Dockerfile payload stage drops
+gzipped binaries (azure-vnet, azure-vnet-ipam, azure-vnet-telemetry,
+azure-ipam) and a sum.txt with pre-compression sha256 checksums.
+
+_README and sum.txt are placeholders so the directory exists in
+source control. //go:embed picks up everything except files whose
+basename starts with _ or .
+
+The corresponding cns/embed/payload.go declares:
+
+	//go:embed fs
+	var embedfs embed.FS
+
+so at runtime CNS can extract each gzipped binary to /opt/cni/bin
+via the cns deploy subcommand or the in-process daemon bootstrap.

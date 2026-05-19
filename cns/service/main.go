@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -22,6 +23,9 @@ import (
 	"github.com/Azure/azure-container-networking/cns"
 	cnsclient "github.com/Azure/azure-container-networking/cns/client"
 	cnscli "github.com/Azure/azure-container-networking/cns/cmd/cli"
+	"github.com/Azure/azure-container-networking/cns/cmd/embedded"
+	cnsembed "github.com/Azure/azure-container-networking/cns/embed"
+	cnshash "github.com/Azure/azure-container-networking/cns/hash"
 	"github.com/Azure/azure-container-networking/cns/cniconflist"
 	"github.com/Azure/azure-container-networking/cns/common"
 	"github.com/Azure/azure-container-networking/cns/configuration"
@@ -495,6 +499,15 @@ func startTelemetryService(ctx context.Context) {
 
 // Main is the entry point for CNS.
 func main() {
+	// Dispatch to embedded-payload subcommands (deploy/verify/list)
+	// before falling through to the daemon arg parser. This lets the
+	// same binary act as both the CNS daemon and the cni-installer
+	// helper that used to live in a separate dropgz image.
+	if embedded.IsSubcommand(os.Args) {
+		embedded.Execute()
+		return
+	}
+
 	// Initialize and parse command line arguments.
 	acn.ParseArgs(&args, printVersion)
 
@@ -506,6 +519,17 @@ func main() {
 	metric.RecordStartTime()
 	metric.SetBuildInfo(version)
 	metric.ClassifyAndRecordBootState()
+
+	// Deploy embedded CNI binaries before any other bootstrap work.
+	// This replaces the cni-dropgz init container: by the time the
+	// HTTP listener binds, /opt/cni/bin/* is guaranteed current.
+	// Failures are logged to stderr but do not abort startup — the
+	// existing init-container model also tolerated stale binaries
+	// when present. We can't use the CNS logger here because
+	// acn.ParseArgs hasn't initialized it yet.
+	if err := deployEmbeddedCNI(); err != nil {
+		fmt.Fprintf(os.Stderr, "[Azure CNS] embedded CNI deploy failed: %v\n", err)
+	}
 
 	cniPath := acn.GetArg(acn.OptNetPluginPath).(string)
 	cniConfigFile := acn.GetArg(acn.OptNetPluginConfigFile).(string)
@@ -1781,4 +1805,85 @@ func PopulateCNSEndpointState(endpointStateStore store.KeyValueStore) error {
 		return fmt.Errorf("failed to write endpoint state to store: %w", err)
 	}
 	return nil
+}
+
+// cniBinDir is where CNS extracts embedded CNI plugin binaries.
+const cniBinDir = "/opt/cni/bin"
+
+// deployEmbeddedCNI extracts the CNI/IPAM binaries embedded in the
+// CNS image to /opt/cni/bin. It is a no-op if the embedded payload
+// is empty (e.g. local builds without the payload Dockerfile stage).
+// On warm pods where the on-disk binaries already match the embedded
+// sha256 sums, deployEmbeddedCNI skips the write and returns nil.
+//
+// Called from main() before logger initialization, so it writes
+// diagnostics to stderr rather than via the CNS logger.
+func deployEmbeddedCNI() error {
+	contents, err := cnsembed.Contents()
+	if err != nil {
+		return fmt.Errorf("list embedded payload: %w", err)
+	}
+	srcs := make([]string, 0, len(contents))
+	for _, c := range contents {
+		if c == "sum.txt" {
+			continue
+		}
+		srcs = append(srcs, c)
+	}
+	if len(srcs) == 0 {
+		fmt.Fprintln(os.Stderr, "[Azure CNS] no embedded CNI payload; skipping deploy")
+		return nil
+	}
+
+	dests := make([]string, len(srcs))
+	for i, s := range srcs {
+		dests[i] = filepath.Join(cniBinDir, s)
+	}
+
+	// Skip the rewrite when every on-disk sha256 matches the embedded
+	// sums. Keeps the warm-restart path near-zero cost.
+	if ok, _ := cniPayloadCurrent(srcs, dests); ok {
+		fmt.Fprintln(os.Stderr, "[Azure CNS] embedded CNI payload already current on disk; skipping deploy")
+		return nil
+	}
+
+	if err := os.MkdirAll(cniBinDir, 0o755); err != nil { //nolint:gomnd // standard 0755
+		return fmt.Errorf("mkdir %s: %w", cniBinDir, err)
+	}
+	z, _ := zap.NewProduction()
+	defer z.Sync() //nolint:errcheck
+	if err := cnsembed.Deploy(z.With(zap.String("component", "cni-deploy")), srcs, dests, cnsembed.Gzip); err != nil {
+		return fmt.Errorf("deploy: %w", err)
+	}
+
+	// Verify what we just wrote.
+	ok, err := cniPayloadCurrent(srcs, dests)
+	if err != nil {
+		return fmt.Errorf("verify: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("verify: on-disk files do not match embedded sums after deploy")
+	}
+	return nil
+}
+
+// cniPayloadCurrent returns true when every src/dst pair on disk
+// matches the sha256 recorded in the embedded sum.txt.
+func cniPayloadCurrent(srcs, dests []string) (bool, error) {
+	rc, err := cnsembed.Extract("sum.txt", cnsembed.None)
+	if err != nil {
+		return false, fmt.Errorf("extract sum.txt: %w", err)
+	}
+	defer rc.Close()
+	sums, err := cnshash.Parse(rc)
+	if err != nil {
+		return false, fmt.Errorf("parse sum.txt: %w", err)
+	}
+	for i := range srcs {
+		ok, err := sums.Check(srcs[i], dests[i])
+		if err != nil || !ok {
+			return false, nil
+		}
+	}
+	return true, nil
 }
