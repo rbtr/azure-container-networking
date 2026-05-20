@@ -9,17 +9,22 @@
 
 ## Hypothesis
 
-The CNS DaemonSet's `cni-installer` init container is responsible for
-~17 s of `node-ready` time (measured in [Lab 2](./02-node-readiness.md)
-by comparing stock CNS with a no-init BYOCNI deployment). Most of
-that isn't the init container itself (image pull + 1 s `cp` =
-~4 s) — it's the **serial pod-sync waterfall** kubelet enforces:
+The CNS DaemonSet's `cni-installer` init container imposes a serial
+pod-sync waterfall on every node bootstrap. Comparison data in [Lab
+2](./02-node-readiness.md) (stock CNS 26 s vs no-init BYOCNI 9 s)
+suggested the init container costs ~17 s, but that comparison
+conflated multiple variables (cluster type, CNS image, dropgz vs no
+init). To get the true cost we need a controlled A/B with the init
+container as the *only* variable. See [Experiment — rigorous
+A/B](#experiment--rigorous-init-container-ab) below.
+
+The waterfall the init container creates:
 
 ```mermaid
 flowchart LR
     a[init: image pull] -->|wait| b[init: extract bins]
-    b -->|init-to-main-gap<br/>6 s kubelet sync| c[main: image pull]
-    c -->|exec-gap<br/>4 s containerd serialization| d[main: CNS bootstrap]
+    b -->|init-to-main-gap<br/>kubelet sync| c[main: image pull]
+    c -->|exec-gap<br/>containerd serialization| d[main: CNS bootstrap]
     d --> e[CNS writes conflist]
     e --> f[node-ready]
 ```
@@ -257,28 +262,161 @@ The on-disk cost dominates. Keep gzip in the payload.
 
 ---
 
-## End-to-end node-init impact (projected)
+## Experiment — rigorous init-container A/B
 
-From the [Lab 2](./02-node-readiness.md) measurement of stock CNS vs
-no-init BYOCNI:
+**Date:** 2026-05-20
+**Motivation:** The original [Lab 2](./02-node-readiness.md) comparison
+(stock CNS 26 s vs no-init BYOCNI 9 s) conflated three variables:
 
-| Phase | Stock CNS (init container) | Embedded CNI (no init) | delta |
+1. **Cluster type** — Azure CNI Overlay+Cilium vs BYOCNI Overlay
+2. **CNS image** — stock AKS-rolled 1.7.x vs PR #4398 metrics build
+3. **Init container** — `cni-dropgz` vs no init
+
+We need to isolate variable 3. This experiment runs the *same CNS
+image* (the embed-cni POC build) on the *same cluster* (persistent
+`evanbaker-byocni-overlay-westus2`), changing only the DaemonSet
+manifest:
+
+- **Arm A:** DaemonSet **with** an init container that runs
+  `cns deploy --out-dir /opt/cni/bin` (same image as the main
+  container — sidesteps the image-pull confound).
+- **Arm B:** DaemonSet **without** an init container; CNS deploys
+  the binaries inline during its bootstrap (the POC code path).
+
+10 runs per arm, alternating in blocks of 5 (A→B→A→B) to control
+for AKS regional time drift.
+
+### Results — `node-ready` (n=10 per arm)
+
+| arm | min | p50 | p95 | p99 | max | mean | stddev |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| **A** (with init) | 13.0 | **16.5** | 18.6 | 18.9 | 19.0 | 16.4 | 1.84 |
+| **B** (no init)   | 11.0 | **14.0** | 15.6 | 15.9 | 16.0 | 13.9 | 1.37 |
+| **Δ (A − B)** | 2.0 | **2.5** | 3.0 | 3.0 | 3.0 | 2.5 | — |
+
+```mermaid
+%%{init: {'theme':'base'}}%%
+xychart-beta
+    title "node-ready: with-init vs no-init (n=10 each)"
+    x-axis ["min", "p50", "p95", "p99", "max"]
+    y-axis "seconds" 0 --> 20
+    bar [13.0, 16.5, 18.6, 18.9, 19.0]
+    bar [11.0, 14.0, 15.6, 15.9, 16.0]
+```
+
+(Blue = Arm A with init; orange = Arm B no init)
+
+### Statistical confidence
+
+- **Welch's t-test:** t = 3.45, df = 16.6 → **p < 0.01** two-tailed
+- **Mann-Whitney U:** U = 19 (n₁ = n₂ = 10) → **p < 0.05** two-tailed
+- Block-2 means within 1 s of block-1 in both arms → no significant
+  time drift over the ~90 min experiment
+
+The 2.5 s delta is statistically significant.
+
+### Phase decomposition (combined p50 across 10 runs each)
+
+| span | Arm A (with init) | Arm B (no init) | delta |
+|---|--:|--:|--:|
+| `cns-pod-schedule-latency` | 0.52 | 0.76 | +0.24 |
+| `cns-init-image-pull` | 7.0 | — | (gone) |
+| `cns-init-container-run` | 2.0 | — | (gone) |
+| `cns-init-to-main-gap` | (not captured) | — | — |
+| `cns-image-pull` | 7.0 | 7.0 | 0.0 |
+| `cns-container-start` (from Pulled) | 4.5 | 1.0 | **−3.5** |
+| `cns-exec-gap` | 1.15 | 2.65 | +1.50 |
+| `cns-process-bootstrap` | 0.31 | 0.30 | 0.0 |
+| `cns-state-restored` | 0.51 | 1.80 | +1.29 |
+| `cns-first-nnc-received` | 0.80 | 2.17 | +1.37 |
+| `cns-listener-ready` | 0.83 | 2.21 | +1.38 |
+| `cns-conflist-write` | 1.87 | 3.26 | +1.39 |
+| **`node-ready`** | **16.5** | **14.0** | **−2.5** |
+
+Several interesting observations:
+
+1. **Image pull is paid once** in both arms — Arm A's init and main
+   containers share the same image, so kubelet's image cache hits
+   for the main pull. The 7 s pull is one-time per node either way.
+2. **`cns-container-start` (Pulled → started) drops 3.5 s in Arm B.**
+   That's the actual init→main pod-sync waterfall: kubelet has to
+   sequence init-exit → main-start, even when the image is cached.
+   This is the dominant cost the init container imposes.
+3. **CNS-internal spans in Arm B shift later by ~1.4 s.** Because
+   Arm B runs `deployEmbeddedCNI()` inside the main container before
+   logging "state-restored", the entire CNS bootstrap timeline is
+   shifted right by the deploy work (sha256 verify + extract +
+   write of 4 binaries ≈ 1.3 s when binaries already current via
+   the skip path, or ~2 s on cold; observed value here is consistent
+   with the cold path).
+4. **Net node-ready delta is the difference** between (3.5 s saved
+   by removing the kubelet waterfall) and (1.4 s added by doing the
+   deploy work inline) ≈ 2 s, plus minor variance from pod-schedule
+   and exec-gap shifts. Aligns with the observed 2.5 s.
+
+### What this measurement does **not** capture
+
+- **Separate init image** (real `cni-dropgz`, ~30 MB extra over the
+  wire). Would add a separate `cns-init-image-pull` cost on cold
+  nodes that doesn't share kubelet's image cache with the main
+  container. This experiment used the same image for both
+  containers to isolate the waterfall cost; production today uses
+  a separate dropgz image.
+- **Cold node image cache.** All nodes in this experiment provisioned
+  fresh, but the CNS image was already in the AKS registry; we
+  didn't simulate VHD bake-in or cold-region pulls.
+- **Nodepool stampede.** Single-node scale-up per run (+1 node).
+  Larger concurrent nodepool growth would stress containerd
+  serialization further and likely widen the gap.
+
+### Why the original 9 s vs 26 s gap was so much larger
+
+The original comparison spanned:
+
+| factor | "9 s" (BYOCNI no-init) | "26 s" (Azure CNI Overlay stock) |
+|---|---|---|
+| Cluster | BYOCNI Overlay | Azure CNI Overlay + Cilium |
+| CNS image | embed-cni POC (fast bootstrap) | stock 1.7.x (slower path) |
+| Init container | none | `cni-dropgz` (separate ~30 MB image) |
+| Competing daemonsets | minimal | full AKS production stack |
+| Node geometry | Standard_B12ms | Standard_B12ms |
+
+Removing the init container in isolation accounts for ~2.5 s of
+that ~17 s delta on this configuration. The rest is attributable
+to the other variables — particularly the slower stock CNS
+bootstrap (fixed by [PR #4398](./03-bootstrap-metrics.md)) and
+DaemonSet stampede contention on the production AKS path.
+
+### Source data
+
+- Raw spans CSVs: `/tmp/bench-ab/20260520-000808/{armA,armB}-block{1,2}/spans.csv`
+- Combined per-arm: `/tmp/bench-ab/20260520-000808/combined/arm{A,B}.spans.csv`
+- Combined dashboard: served at `dashboard.html` (20 runs labeled
+  1-10 = Arm B, 11-20 = Arm A in the per-run timeline)
+
+---
+
+## End-to-end node-init impact (controlled measurement)
+
+| Phase | Arm A (with init) | Arm B (no init) | delta |
 |---|---:|---:|---:|
-| `cns-pod-schedule-latency` | 0.6 s | 0.5 s | — |
-| `cns-init-image-pull` | 4 s | n/a | **−4 s** |
-| `cns-init-container-run` | 0 s | n/a | — |
-| `cns-init-to-main-gap` | 6 s | n/a | **−6 s** |
-| `cns-image-pull` | 0 s preloaded | 5 s | +5 s |
-| `cns-container-start` | 3 s | 0 s | −3 s |
-| `cns-exec-gap` | 5 s | 0.6 s | **−4 s** |
-| `cns-listener-ready` | 7 s | 0.4 s | −6 s |
-| `cns-conflist-write` | 8 s | 1.4 s | −6 s |
-| **node-ready** | **26 s** | **9 s** | **−17 s** |
+| `cns-init-image-pull` | 7 s | n/a | −7 s |
+| `cns-init-container-run` | 2 s | n/a | −2 s |
+| `cns-image-pull` | 7 s | 7 s | 0 (kubelet image cache) |
+| `cns-container-start` | 4.5 s | 1.0 s | **−3.5 s** (waterfall removed) |
+| `cns-conflist-write` (relative) | 1.9 s | 3.3 s | +1.4 s (inline deploy) |
+| **`node-ready`** | **16.5 s** | **14.0 s** | **−2.5 s** |
 
-The image-pull jump (+5 s) is incidental — the BYOCNI VHD didn't
-have our experimental image pre-loaded. If CNS image is pre-pulled
-into the VHD too, the embedded-CNI design should produce p50 around
-4-5 s `node-ready`.
+On a **clean A/B with same image and same cluster**, embedding the
+CNI binaries in the CNS image saves 2.5 s of `node-ready` p50.
+
+**Production today is closer to Arm A but worse** — the real
+`cni-dropgz` init image is a separate 30 MB pull, so cold-node
+`cns-init-image-pull` would be larger than the kubelet-cached 7 s
+we measured here, and the corresponding savings would grow. A
+follow-up experiment with the real dropgz init image (rather than
+"same image as main") would quantify that gap; see
+[open questions](#open-questions) below.
 
 ---
 
@@ -286,15 +424,20 @@ into the VHD too, the embedded-CNI design should produce p50 around
 
 ```mermaid
 flowchart LR
-    a[Init-container model] -->|measured| b["6 s init-to-main-gap<br/>4 s exec-gap<br/>= 10 s pure waterfall"]
-    c[Embedded-CNI model] -->|measured| d["1 container start<br/>0.6 s exec-gap<br/>~5x less serialization"]
-    b -.-> e[~17 s p50 savings on node-ready]
+    a[Init-container model] -->|measured| b["Same-image cached pull<br/>+ 3.5 s init→main waterfall<br/>= 2.5 s p50 node-ready cost"]
+    c[Embedded-CNI model] -->|measured| d["1 container start<br/>1.4 s inline deploy<br/>~14 s node-ready"]
+    b -.-> e[2.5 s p50 savings on controlled A/B]
     d -.-> e
+    e -.-> f[Real dropgz init image<br/>likely produces larger gap<br/>not measured here]
 ```
 
-The init container was 4 s of actual work but ~14 s of serial
-waterfall in kubelet and containerd. Removing it removes the
-waterfall, not just the work.
+The init-container-as-a-concept costs 2.5 s of `node-ready` on this
+controlled A/B (same image, same cluster). The dominant component
+is the kubelet pod-sync waterfall between init-exit and main-start
+(~3.5 s, partially offset by inline-deploy work in the no-init arm
+~1.4 s). Production's real `cni-dropgz` init container adds a
+separate 30 MB image pull on top of that, which this experiment
+did not measure.
 
 ---
 
@@ -306,10 +449,17 @@ waterfall, not just the work.
    LOC of new code, mostly mirroring existing dropgz code.
 3. **Image size acceptable.** +36 MB on-disk for the gzipped payload
    (vs +108 MB for raw); +36 MB over the wire.
-4. **The win is removing the waterfall, not the install.** Stock
-   CNS spends ~14 s of `node-ready` in kubelet pod-sync /
-   containerd-exec serialization that *the init container creates*.
-   Removing the init container removes the gating.
+4. **Controlled A/B shows 2.5 s p50 savings** on `node-ready`
+   (p < 0.01). Dominated by kubelet init→main pod-sync waterfall
+   removal; partially offset by inline deploy work. **Smaller than
+   the original 17 s estimate**, which conflated cluster type, CNS
+   image version, and dropgz-specific image-pull cost.
+5. **Real-world gap is likely larger.** The controlled A/B used the
+   same image for init and main containers to isolate the waterfall
+   variable. Production's real `cni-dropgz` is a separate ~30 MB
+   image with its own cold-node pull cost; a follow-up experiment
+   with that exact configuration would quantify the production
+   delta.
 
 ## Recommendations
 
@@ -323,15 +473,24 @@ waterfall, not just the work.
 
 ## Open questions
 
-1. **Windows path mapping** (`C:\k\cni\bin\` instead of `/opt/cni/bin`).
+1. **Production-realistic init container experiment.** This A/B used
+   the same image for init and main to isolate the waterfall cost.
+   Repeating with the real `cni-dropgz` separate init image would
+   quantify the additional cost from a 30 MB separate image pull on
+   cold nodes — likely 2-5 s extra on top of the 2.5 s measured here.
+2. **Windows path mapping** (`C:\k\cni\bin\` instead of `/opt/cni/bin`).
    Dockerfile already has a Windows target; needs runtime path
    detection.
-2. **Other `cni-dropgz` consumers** outside the CNS DaemonSet
+3. **Other `cni-dropgz` consumers** outside the CNS DaemonSet
    (NPM-only, `cniv1` clusters) — would need a different transition
    path or keep dropgz alive for them.
-3. **Per-binary versioning** if CNI and CNS diverge. The current
+4. **Per-binary versioning** if CNI and CNS diverge. The current
    coupling (CNS image = CNI binary version) is intentional but may
    not match all consumers' release schedules.
-4. **Telemetry on the deploy step** — would add a small histogram for
+5. **Telemetry on the deploy step** — would add a small histogram for
    `cns_cni_deploy_duration_seconds` to detect drift in cold-start
    cost over time. Easy follow-up.
+6. **Nodepool stampede.** This A/B was single-node scale-up per run.
+   Concurrent multi-node nodepool growth would stress kubelet/containerd
+   serialization differently — the init-container cost may scale
+   super-linearly with concurrency.

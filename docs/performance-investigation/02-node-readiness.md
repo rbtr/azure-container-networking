@@ -285,13 +285,25 @@ xychart-beta
     bar [31, 9]
 ```
 
+> ⚠️ **This comparison conflates three variables** (cluster type,
+> CNS image version, init container). The [rigorous A/B in Lab 4](./04-embed-cni-poc.md#experiment--rigorous-init-container-ab)
+> isolates the init container alone and measures **2.5 s p50** as
+> the true cost. The remaining ~14 s of the 22 s gap above is
+> cluster type and CNS image version (PR #4398 dramatically
+> accelerates CNS-internal bootstrap, see [Lab 3](./03-bootstrap-metrics.md)).
+
 ---
 
 ## Conclusions
 
-1. **The init container is the dominant preventable gap.** Removing
-   it (or replacing it with the embedded-CNI subcommand) is worth
-   ~17 s of p50 `node-ready`.
+1. **The init container imposes a measurable serial waterfall** on
+   `node-ready` — **2.5 s p50** on a controlled A/B
+   ([Lab 4](./04-embed-cni-poc.md)); larger gap against the real
+   `cni-dropgz` separate-image init container. Removing it (via
+   embedded-CNI subcommand) is a real but modest improvement; the
+   bigger headline numbers in earlier comparisons came from
+   simultaneously upgrading the CNS image to PR #4398 and switching
+   cluster types.
 2. **Static-pod (T2.1) is the cleanest architectural fix but is
    blocked** on the AKS VMSS extension surface. Requires custom VHD
    bake-in to be testable.

@@ -25,10 +25,13 @@ writes account for ≤0.06% of end-to-end pod startup time.
 ### Node readiness (Lab 2)
 
 > **About two-thirds of `node-ready` time is serial pod-sync
-> waterfall, not actual work.** Removing the init container removed
-> 17 seconds of `node-ready` time (26 s → 9 s p50) — most of it
-> kubelet's init→main pod-sync gap and downstream cascade, not the
-> install itself.
+> waterfall, not actual work.** An uncontrolled comparison (stock
+> AKS CNS 26 s vs no-init BYOCNI 9 s) suggested ~17 s init-container
+> cost; a [rigorous A/B](./04-embed-cni-poc.md#experiment--rigorous-init-container-ab)
+> with the init container as the *only* variable shows the true
+> cost is **2.5 s p50** (p<0.01). The rest of the original 17 s
+> gap is attributable to cluster type, CNS image version (PR #4398
+> is faster), and DaemonSet stampede contention.
 
 ### CNS bootstrap observability (Lab 3)
 
@@ -43,6 +46,9 @@ writes account for ≤0.06% of end-to-end pod startup time.
 > `cns deploy` subcommand reads gzipped CNI binaries from the CNS
 > image via `//go:embed` and writes them to `/opt/cni/bin/` during
 > daemon bootstrap. End-to-end verified on a live cluster.
+> **Measured savings on controlled A/B: 2.5 s p50** (16.5 s → 14.0 s);
+> larger gains expected with the real `cni-dropgz` separate init
+> image (cold-node pull cost adds on top).
 
 ## Performance trend across all experiments
 
@@ -60,20 +66,22 @@ the baseline. Removing the CNI semaphore was 12% **worse**.
 Flannel (vxlan), a completely independent CNI, lands in the same
 window — confirming the bottleneck is the kernel.
 
-For node readiness, the contrast is even sharper:
+For node readiness, the controlled A/B:
 
 ```mermaid
 %%{init: {'theme':'base'}}%%
 xychart-beta
-    title "Node-ready p50 (Standard_B12ms, BYOCNI overlay, 3 runs each)"
-    x-axis ["Stock CNS DS + init", "Embed CNI POC (no init)"]
-    y-axis "node-ready p50 (s)" 0 --> 30
-    bar [26, 9]
+    title "Node-ready p50: rigorous init-container A/B (n=10 each)"
+    x-axis ["Arm A: with init", "Arm B: no init"]
+    y-axis "node-ready p50 (s)" 0 --> 20
+    bar [16.5, 14.0]
 ```
 
-The 17 s delta is broken down in [Lab 4](./04-embed-cni-poc.md);
-about 6 s is the kubelet `init-to-main-gap`, 4 s is `cns-exec-gap`,
-and the rest is downstream gating that the init container blocked.
+The 2.5 s p50 delta is broken down in
+[Lab 4 — phase decomposition](./04-embed-cni-poc.md#phase-decomposition-combined-p50-across-10-runs-each);
+~3.5 s of init→main pod-sync waterfall saved, partially offset by
+~1.4 s of inline deploy work in the no-init arm. Welch's t=3.45,
+p<0.01.
 
 ## Recommendations
 
@@ -82,7 +90,7 @@ and the rest is downstream gating that the init container blocked.
 | 1 | **Adopt BoltDB per-record store** | 11–23× faster writes, eliminates external mutexes, O(1) scaling, 11× lower GC pressure | Implementation on [`rbtr/feat/bolt-store`](https://github.com/rbtr/azure-container-networking/tree/feat/bolt-store) — ready to upstream |
 | 2 | **Keep the CNI semaphore (default = NumCPU)** | Prevents RTNL stampede; matches or beats reference CNI Flannel | Already in production |
 | 3 | **Land PR #4398 (bootstrap metrics)** | Sub-second observability for SLO tracking + node-init diagnosis | Open at [Azure/azure-container-networking#4398](https://github.com/Azure/azure-container-networking/pull/4398) |
-| 4 | **Embed CNI binaries in CNS image** | Eliminates 6–10 s of serial init waterfall; +36 MB on-disk; clean drift-correction story | POC on [`rbtr/experiment/cns-embed-cni`](https://github.com/rbtr/azure-container-networking/tree/experiment/cns-embed-cni) |
+| 4 | **Embed CNI binaries in CNS image** | Eliminates kubelet init→main pod-sync waterfall; controlled A/B shows 2.5 s p50 savings (16.5 s → 14.0 s, p<0.01); larger gains expected vs production `cni-dropgz` separate-image init; +36 MB on-disk; clean drift-correction story | POC on [`rbtr/experiment/cns-embed-cni`](https://github.com/rbtr/azure-container-networking/tree/experiment/cns-embed-cni) |
 | 5 | **Do not pursue further RTNL mitigations** | Flannel proves we're at the kernel floor; effort better spent at kubelet, kernel, or architectural layer | — |
 | 6 | **Consider daemon-based CNI model** | Single-process serialization (Cilium-style) is the only architecture that escapes per-process RTNL contention | Future |
 

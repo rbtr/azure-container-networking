@@ -19,7 +19,8 @@ the experimental record across two distinct workstreams.
    primary observability path.
 5. **[Lab 4 — Embedded CNI POC](./04-embed-cni-poc.md)** — embedding
    the CNI installer in the CNS image as a `cns deploy` subcommand,
-   plus the measured 26 s → 9 s `node-ready` improvement.
+   plus a rigorous A/B measurement of the init-container cost
+   (2.5 s p50 on a controlled comparison).
 
 Each lab writeup follows the same structure: **hypothesis →
 experiment → data → conclusion**, with tables and (where
