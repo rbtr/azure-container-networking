@@ -1,0 +1,161 @@
+# CNS DaemonSet with embedded CNI installer used as init container.
+#
+# This manifest uses the SAME embed-CNI image for both the init container
+# and the main container. The init container runs `cns deploy --out-dir
+# /opt/cni/bin` to extract CNI binaries, then exits. The main container
+# runs the normal CNS daemon.
+#
+# This is useful for A/B testing the init-container waterfall cost:
+# compare this manifest (with init) against cns-embed-cni-daemonset.yaml
+# (without init) on the same cluster to isolate the kubelet pod-sync
+# overhead.
+#
+# Usage:
+#   kubectl apply -f deploy/examples/cns-embed-cni-with-init-daemonset.yaml
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: azure-cns
+  namespace: kube-system
+  labels:
+    app: azure-cns
+spec:
+  selector:
+    matchLabels:
+      k8s-app: azure-cns
+  template:
+    metadata:
+      labels:
+        k8s-app: azure-cns
+      annotations:
+        cluster-autoscaler.kubernetes.io/daemonset-pod: "true"
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.azure.com/cluster
+                operator: Exists
+              - key: type
+                operator: NotIn
+                values:
+                - virtual-kubelet
+              - key: kubernetes.io/os
+                operator: In
+                values:
+                - linux
+      priorityClassName: system-node-critical
+      tolerations:
+        - key: CriticalAddonsOnly
+          operator: Exists
+        - operator: Exists
+          effect: NoExecute
+        - operator: Exists
+          effect: NoSchedule
+      initContainers:
+        - name: cni-installer
+          image: acnpublic.azurecr.io/azure-cns:v0.0.4-embed-cni-20260519-2000
+          imagePullPolicy: IfNotPresent
+          command:
+            - /usr/local/bin/azure-cns
+          args:
+            - deploy
+            - --out-dir
+            - /opt/cni/bin
+          volumeMounts:
+            - name: cni-bin
+              mountPath: /opt/cni/bin
+      containers:
+        - name: cns-container
+          image: acnpublic.azurecr.io/azure-cns:v0.0.4-embed-cni-20260519-2000
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-c"
+            - "tcp://$(CNSIpAddress):$(CNSPort)"
+            - "-t"
+            - "$(CNSLogTarget)"
+          securityContext:
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_ADMIN
+                - NET_RAW
+          volumeMounts:
+            - name: log
+              mountPath: /var/log
+            - name: cns-state
+              mountPath: /var/lib/azure-network
+            - name: azure-endpoints
+              mountPath: /var/run/azure-cns/
+            - name: cns-config
+              mountPath: /etc/azure-cns
+            - name: cni-bin
+              mountPath: /opt/cni/bin
+            - name: azure-vnet
+              mountPath: /var/run/azure-vnet
+            - name: legacy-cni-state
+              mountPath: /var/run/azure-vnet.json
+            - name: xtables-lock
+              mountPath: /run/xtables.lock
+            - name: cni-conflist
+              mountPath: /etc/cni/net.d
+          ports:
+            - containerPort: 10090
+            - containerPort: 10092
+              name: metrics
+              protocol: TCP
+          env:
+            - name: CNSIpAddress
+              value: "127.0.0.1"
+            - name: CNSPort
+              value: "10090"
+            - name: CNSLogTarget
+              value: "stdoutfile"
+            - name: CNS_CONFIGURATION_PATH
+              value: /etc/azure-cns/cns_config.json
+            - name: NODENAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+      hostNetwork: true
+      volumes:
+        - name: cni-conflist
+          hostPath:
+            path: /etc/cni/net.d
+            type: Directory
+        - name: azure-endpoints
+          hostPath:
+            path: /var/run/azure-cns/
+            type: DirectoryOrCreate
+        - name: log
+          hostPath:
+            path: /var/log
+            type: Directory
+        - name: cns-state
+          hostPath:
+            path: /var/lib/azure-network
+            type: DirectoryOrCreate
+        - name: cni-bin
+          hostPath:
+            path: /opt/cni/bin
+            type: Directory
+        - name: azure-vnet
+          hostPath:
+            path: /var/run/azure-vnet
+            type: DirectoryOrCreate
+        - name: legacy-cni-state
+          hostPath:
+            path: /var/run/azure-vnet.json
+            type: FileOrCreate
+        - name: cns-config
+          configMap:
+            name: cns-config
+        - name: xtables-lock
+          hostPath:
+            path: /run/xtables.lock
+            type: File
+      serviceAccountName: azure-cns
