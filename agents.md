@@ -43,6 +43,22 @@ Before implementing:
 - If a simpler approach exists, say so. Push back when warranted.
 - If something is unclear, stop. Name what's confusing. Ask.
 
+## 1.5. Rubber-Duck Validation
+
+**Use the rubber-duck agent at every high-leverage decision point — not just when stuck.**
+
+Required checkpoints:
+- **After planning, before implementing** — submit your plan for critique. This is the highest-leverage moment; catching a design flaw here avoids hours of rework.
+- **After implementation, before committing** — request a code review pass. Catches bugs, missed edge cases, and incomplete changes that self-review misses.
+- **When stuck or failing** — if a build fails twice, a test won't pass, or an approach isn't working, get a critique before trying a third time.
+
+Optional but recommended:
+- After writing tests, to assess coverage gaps.
+- Before making architectural decisions that affect multiple packages.
+- When touching high-risk code (state persistence, IPAM allocation, NC lifecycle).
+
+The rubber-duck agent is your ally for catching blind spots. It costs one tool call and routinely prevents multi-turn rework cycles.
+
 ## 2. Simplicity First
 
 **Minimum code that solves the problem. Nothing speculative.**
@@ -122,6 +138,47 @@ Specifically for ACN work:
 - **Test ports** — CNS HTTP API (default `:10090`), Prometheus metrics (`:9090`), and any Ginkgo/`httptest` server defaults will collide. Prefer `:0` (kernel-assigned) in test fixtures or pass an explicit per-session port; never assume the default port is free.
 - **Long-lived processes** — `cnetz`, `dropgz`, the CNS daemon, `tcpdump`, etc. started by an agent must be tracked by PID and killed at end of session. Use `kill <PID>` with a specific PID; do not use name-based killers (`pkill`, `killall`) — they will hit other agents' processes.
 - **Cloud resources** — if a flow provisions AKS clusters, resource groups, or shared images, scope the resource-group name with the session ID and delete the RG at the end. Never reuse a long-lived cluster across agents without coordination.
+
+## 6. AKS Cluster Management
+
+**Use the repo's cluster Makefile, not raw `az` commands.**
+
+Cluster provisioning is standardized in `hack/aks/Makefile`:
+```bash
+# Overlay BYOCNI (for CNS testing without pre-installed CNI/CNS):
+make -C hack/aks overlay-byocni-up CLUSTER=<name> GROUP=<name> REGION=westus2 VM_SIZE=Standard_B12ms
+
+# Stock Overlay AzCNI:
+make -C hack/aks overlay-up CLUSTER=<name> GROUP=<name> REGION=westus2
+
+# Tear down:
+make -C hack/aks down CLUSTER=<name> GROUP=<name>
+
+# See all targets:
+make -C hack/aks help
+```
+
+**Reuse test clusters.** Unless the test requires a fresh cluster, keep clusters alive between runs. Scale nodepools (add/remove nodes) instead of creating new clusters — saves 5-10 minutes per iteration.
+
+**BYOCNI clusters** have all control-plane plumbing (DNC-RC, NNC CRDs) but no CNI or CNS installed. They are the standard testbed for custom CNS images and deployment topology experiments.
+
+## 7. Evidence-First Investigation
+
+**When debugging live infrastructure: collect evidence, then hypothesize.**
+
+- Get logs, events, or metrics before forming explanations.
+- Do not speculate about failure modes when the evidence is obtainable (`kubectl logs`, `kubectl describe`, `kubectl get events`, node journals).
+- If you don't have access, say so — don't fill the gap with assumptions.
+
+## 8. Deployment Completeness
+
+**When building a feature that changes deployment topology, ship sample manifests alongside the code.**
+
+If the feature changes how a component is deployed (new container, removed init container, new sidecar, new DaemonSet fields), the deliverable MUST include:
+- Sample Kubernetes manifests (DaemonSet, RBAC, ConfigMap) in `deploy/examples/` or alongside the test artifacts.
+- Brief deployment instructions in a comment header or README.
+
+Code without deployment artifacts is incomplete — a reviewer or follow-up agent cannot validate or reproduce without them.
 
 ---
 

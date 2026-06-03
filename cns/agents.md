@@ -64,3 +64,23 @@ CNS initialization and state management are high-risk code paths. Behavioral cha
 
 ## SwiftV2 note
 SwiftV2 adds multitenancy and multi-NIC behaviors. Treat SwiftV2-only APIs/CRDs as specialized paths; verify scenario-specific behavior when touching related code.
+
+## NC programming flow detail
+On initial NC program, CNS stores the local NC version as **-1**. CNS then waits for NMAgent to report version **0** via IMDS/wireserver (`syncHostNCVersion`) before treating that NC as programmed and making its IPs Available. This is a blocking wait on first boot — IPs are not allocatable until NMAgent confirms v0. Do not assume `syncHostNCVersion` returns immediately on fresh nodes.
+
+## CNS image build and push
+Standard procedure for building a test CNS image:
+```bash
+# From a worktree or branch with your changes:
+docker buildx build --push -f cns/Dockerfile \
+  -t acnpublic.azurecr.io/azure-cns:<your-tag> .
+```
+Build takes ~3-5 minutes. Tags should be descriptive (e.g., `v0.0.4-6-<feature>-<date>-<time>`).
+
+## BYOCNI test clusters
+BYOCNI overlay/swift clusters are the standard testbed for custom CNS images. They have:
+- DNC-RC running and creating NNCs per node as usual.
+- Upstream CNI plugins in `/opt/cni/bin/` (bridge, host-local, etc.) but NOT `azure-vnet`.
+- No pre-installed CNS — you deploy your own DaemonSet.
+
+Provision via `make -C hack/aks overlay-byocni-up`. Reuse between test runs — do not tear down after each iteration.
