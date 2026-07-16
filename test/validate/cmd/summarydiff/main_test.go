@@ -6,6 +6,11 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const (
+	testCheckName = "cns"
+	testNodeName  = "node-1"
+)
+
 func TestAggregate(t *testing.T) {
 	summary := validationSummary{
 		Checks: []validationCheckEntry{
@@ -33,4 +38,42 @@ func TestAggregate(t *testing.T) {
 	assert.Equal(t, 1, stats.DuplicateIPs)
 	assert.Equal(t, 5, stats.ExpectedIPsSum)
 	assert.Equal(t, 6, stats.ActualIPsSum)
+}
+
+func TestCompareSummariesRejectsLostIPs(t *testing.T) {
+	baseline := validationSummary{Checks: []validationCheckEntry{{
+		CheckName:      testCheckName,
+		NodeName:       testNodeName,
+		ExpectedCount:  3,
+		ActualCount:    3,
+		ValidationPass: true,
+	}}}
+	candidate := validationSummary{Checks: []validationCheckEntry{{
+		CheckName:      testCheckName,
+		NodeName:       testNodeName,
+		ExpectedCount:  0,
+		ActualCount:    0,
+		ValidationPass: true,
+	}}}
+
+	assert.Error(t, compareSummaries(baseline, candidate))
+}
+
+func TestCompareSummariesAllowsGrowth(t *testing.T) {
+	baseline := validationSummary{Checks: []validationCheckEntry{{
+		CheckName:      testCheckName,
+		NodeName:       testNodeName,
+		ExpectedCount:  3,
+		ActualCount:    3,
+		ValidationPass: true,
+	}}}
+	candidate := validationSummary{Checks: []validationCheckEntry{{
+		CheckName:      testCheckName,
+		NodeName:       testNodeName,
+		ExpectedCount:  5,
+		ActualCount:    5,
+		ValidationPass: true,
+	}}}
+
+	assert.NoError(t, compareSummaries(baseline, candidate))
 }

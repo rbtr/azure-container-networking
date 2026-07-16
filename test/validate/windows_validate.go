@@ -19,11 +19,14 @@ const (
 )
 
 var (
-	hnsEndPointCmd                 = []string{"powershell", "-c", "Get-HnsEndpoint | ConvertTo-Json"}
-	hnsNetworkCmd                  = []string{"powershell", "-c", "Get-HnsNetwork | ConvertTo-Json"}
-	azureVnetCmd                   = []string{"powershell", "-c", "cat ../../k/azure-vnet.json"}
-	azureVnetIpamCmd               = []string{"powershell", "-c", "cat ../../k/azure-vnet-ipam.json"}
-	cnsWinManagedStateFileCmd      = []string{"powershell", "-c", "cat ../../k/azurecns/azure-endpoints.json"}
+	hnsEndPointCmd            = []string{"powershell", "-c", "Get-HnsEndpoint | ConvertTo-Json"}
+	hnsNetworkCmd             = []string{"powershell", "-c", "Get-HnsNetwork | ConvertTo-Json"}
+	azureVnetCmd              = []string{"powershell", "-c", "cat ../../k/azure-vnet.json"}
+	azureVnetIpamCmd          = []string{"powershell", "-c", "cat ../../k/azure-vnet-ipam.json"}
+	cnsWinManagedStateFileCmd = []string{
+		"powershell", "-c",
+		"try { Invoke-WebRequest -Uri 127.0.0.1:10090/debug/persistentstate -Method Post -UseBasicParsing | Select-Object -Expand Content } catch { cat ../../k/azurecns/azure-endpoints.json }",
+	}
 	cnsWinCachedAssignedIPStateCmd = []string{
 		"powershell", "Invoke-WebRequest -Uri 127.0.0.1:10090/debug/ipaddresses",
 		"-Method Post -ContentType application/x-www-form-urlencoded",

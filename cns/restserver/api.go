@@ -55,17 +55,24 @@ func (service *HTTPRestService) setEnvironment(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	returnCode := types.Success
+	returnMessage := ""
 	switch r.Method {
 	case http.MethodPost:
 		logger.Printf("[Azure CNS]  POST received for SetEnvironment.")
+		service.Lock()
 		service.state.Location = req.Location
 		service.state.NetworkType = req.NetworkType
 		service.state.Initialized = true
-		service.saveState()
+		if err = service.saveState(r.Context()); err != nil {
+			returnCode = types.UnexpectedError
+			returnMessage = fmt.Sprintf("persisting environment state: %v", err)
+		}
+		service.Unlock()
 	default:
 	}
 
-	resp := &cns.Response{ReturnCode: 0}
+	resp := &cns.Response{ReturnCode: returnCode, Message: returnMessage}
 	err = common.Encode(w, &resp)
 
 	logger.Response(service.Name, resp, resp.ReturnCode, err)
@@ -163,16 +170,21 @@ func (service *HTTPRestService) createNetwork(w http.ResponseWriter, r *http.Req
 		returnCode = types.UnsupportedEnvironment
 	}
 
+	if returnCode == 0 {
+		service.Lock()
+		saveErr := service.saveState(r.Context())
+		service.Unlock()
+		if saveErr != nil {
+			returnCode = types.UnexpectedError
+			returnMessage = fmt.Sprintf("persisting network state: %v", saveErr)
+		}
+	}
+
 	resp := &cns.Response{
 		ReturnCode: returnCode,
 		Message:    returnMessage,
 	}
-
 	err = common.Encode(w, &resp)
-
-	if returnCode == 0 {
-		service.saveState()
-	}
 
 	logger.Response(service.Name, resp, resp.ReturnCode, err)
 }
@@ -218,17 +230,22 @@ func (service *HTTPRestService) deleteNetwork(w http.ResponseWriter, r *http.Req
 		returnCode = types.InvalidParameter
 	}
 
+	if returnCode == 0 {
+		service.removeNetworkInfo(req.NetworkName)
+		service.Lock()
+		saveErr := service.saveState(r.Context())
+		service.Unlock()
+		if saveErr != nil {
+			returnCode = types.UnexpectedError
+			returnMessage = fmt.Sprintf("persisting network deletion: %v", saveErr)
+		}
+	}
+
 	resp := &cns.Response{
 		ReturnCode: returnCode,
 		Message:    returnMessage,
 	}
-
 	err = common.Encode(w, &resp)
-
-	if returnCode == 0 {
-		service.removeNetworkInfo(req.NetworkName)
-		service.saveState()
-	}
 
 	logger.Response(service.Name, resp, resp.ReturnCode, err)
 }
@@ -270,16 +287,21 @@ func (service *HTTPRestService) createHnsNetwork(w http.ResponseWriter, r *http.
 		}
 	}
 
+	if returnCode == 0 {
+		service.Lock()
+		saveErr := service.saveState(r.Context())
+		service.Unlock()
+		if saveErr != nil {
+			returnCode = types.UnexpectedError
+			returnMessage = fmt.Sprintf("persisting HNS network state: %v", saveErr)
+		}
+	}
+
 	resp := &cns.Response{
 		ReturnCode: returnCode,
 		Message:    returnMessage,
 	}
-
 	err = common.Encode(w, &resp)
-
-	if returnCode == 0 {
-		service.saveState()
-	}
 
 	logger.Response(service.Name, resp, resp.ReturnCode, err)
 }
@@ -321,17 +343,22 @@ func (service *HTTPRestService) deleteHnsNetwork(w http.ResponseWriter, r *http.
 		}
 	}
 
+	if returnCode == 0 {
+		service.removeNetworkInfo(req.NetworkName)
+		service.Lock()
+		saveErr := service.saveState(r.Context())
+		service.Unlock()
+		if saveErr != nil {
+			returnCode = types.UnexpectedError
+			returnMessage = fmt.Sprintf("persisting HNS network deletion: %v", saveErr)
+		}
+	}
+
 	resp := &cns.Response{
 		ReturnCode: returnCode,
 		Message:    returnMessage,
 	}
-
 	err = common.Encode(w, &resp)
-
-	if returnCode == 0 {
-		service.removeNetworkInfo(req.NetworkName)
-		service.saveState()
-	}
 
 	logger.Response(service.Name, resp, resp.ReturnCode, err)
 }
@@ -461,7 +488,10 @@ func (service *HTTPRestService) setOrchestratorType(w http.ResponseWriter, r *ht
 			service.state.OrchestratorType = req.OrchestratorType
 			service.state.NodeID = req.NodeID
 			logger.SetContextDetails(req.OrchestratorType, req.NodeID)
-			service.saveState()
+			if saveErr := service.saveState(r.Context()); saveErr != nil {
+				returnMessage = fmt.Sprintf("persisting orchestrator state: %v", saveErr)
+				returnCode = types.UnexpectedError
+			}
 		default:
 			returnMessage = fmt.Sprintf("Invalid Orchestrator type %v", req.OrchestratorType)
 			returnCode = types.UnsupportedOrchestratorType
@@ -747,7 +777,10 @@ func (service *HTTPRestService) deleteNetworkContainer(w http.ResponseWriter, r 
 			}
 		}
 
-		service.saveState()
+		if saveErr := service.saveState(r.Context()); saveErr != nil {
+			returnMessage = fmt.Sprintf("persisting network container deletion: %v", saveErr)
+			returnCode = types.UnexpectedError
+		}
 	default:
 		returnMessage = "[Azure CNS] Error. DeleteNetworkContainer did not receive a POST."
 		returnCode = types.InvalidParameter

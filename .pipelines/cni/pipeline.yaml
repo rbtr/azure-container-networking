@@ -240,6 +240,24 @@ stages:
 
   - template: singletenancy/cniv2-template.yaml
     parameters:
+      name: windows_podsubnet_bolt
+      clusterType: swift-byocni-up
+      clusterName: w22-podsub-bolt
+      nodeCount: ${NODE_COUNT_WINCLUSTER_SYSTEMPOOL}
+      nodeCountWin: ${NODE_COUNT_WIN}
+      vmSize: ${VM_SIZE_WINCLUSTER_SYSTEMPOOL}
+      vmSizeWin: ${VM_SIZE_WIN}
+      arch: amd64
+      os: windows
+      os_version: 'ltsc2022'
+      osSkuWin: 'Windows2022'
+      scaleup: ${SCALEUP_WIN}
+      iterations: ${ITERATIONS_WIN}
+      upgradeScenario: false
+      stateValidationMode: bolt-second-start
+
+  - template: singletenancy/cniv2-template.yaml
+    parameters:
       name: windows_overlay
       clusterType: overlay-byocni-up
       clusterName: w22-over
@@ -282,6 +300,19 @@ stages:
 
   - template: singletenancy/cniv2-template.yaml
     parameters:
+      name: linux_podsubnet_bolt
+      clusterType: swift-byocni-up
+      clusterName: "linux-podsub-bolt"
+      nodeCount: ${NODE_COUNT_LINUX}
+      vmSize: ${VM_SIZE}
+      arch: amd64
+      scaleup: ${SCALEUP_LINUX}
+      iterations: ${ITERATIONS_LINUX}
+      upgradeScenario: false
+      stateValidationMode: bolt-second-start
+
+  - template: singletenancy/cniv2-template.yaml
+    parameters:
       name: linux_overlay
       clusterType: overlay-byocni-up
       clusterName: "linux-over"
@@ -291,6 +322,19 @@ stages:
       scaleup: ${SCALEUP_LINUX}
       iterations: ${ITERATIONS_LINUX}
       upgradeScenario: false
+
+  - template: singletenancy/cniv2-template.yaml
+    parameters:
+      name: linux_overlay_bolt
+      clusterType: overlay-byocni-up
+      clusterName: "linux-over-bolt"
+      nodeCount: ${NODE_COUNT_LINUX}
+      vmSize: ${VM_SIZE}
+      arch: amd64
+      scaleup: ${SCALEUP_LINUX}
+      iterations: ${ITERATIONS_LINUX}
+      upgradeScenario: false
+      stateValidationMode: bolt-second-start
 
   - template: singletenancy/cniv2-template.yaml
     parameters:
@@ -341,6 +385,33 @@ stages:
       cni: "cilium"
       upgradeScenario: false
       ciliumVersionOverwrite: ${{ parameters.ciliumVersionOverwrite }}
+
+  - template: cilium/cilium-overlay-load-test-template.yaml
+    parameters:
+      name: cilium_overlay_bolt
+      clusterType: overlay-byocni-nokubeproxy-up
+      clusterName: "cilium-over-bolt"
+      nodeCount: ${NODE_COUNT_LINUX}
+      vmSize: ${VM_SIZE}
+      scaleup: ${SCALEUP_LINUX}
+      cni: "cilium"
+      upgradeScenario: false
+      ciliumVersionOverwrite: ${{ parameters.ciliumVersionOverwrite }}
+      stateValidationMode: bolt-second-start
+
+  - template: cilium/cilium-overlay-load-test-template.yaml
+    parameters:
+      name: cilium_overlay_bolt_rollback
+      clusterType: overlay-byocni-nokubeproxy-up
+      clusterName: "cilium-over-bolt"
+      nodeCount: ${NODE_COUNT_LINUX}
+      vmSize: ${VM_SIZE}
+      scaleup: ${SCALEUP_LINUX}
+      cni: "cilium"
+      upgradeScenario: true
+      dependsOn: cilium_overlay_bolt
+      ciliumVersionOverwrite: ${{ parameters.ciliumVersionOverwrite }}
+      stateValidationMode: rollback-json
 
   - template: cilium/cilium-overlay-load-test-template.yaml
     parameters:

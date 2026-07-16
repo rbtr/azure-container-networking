@@ -23,6 +23,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+var errNetworkInterfaceInfoMissing = errors.New("network interface info missing")
+
 // This file contains the utility/helper functions called by either HTTP APIs or Exported/Internal APIs on HTTPRestService
 
 // Get the network info from the service network state
@@ -43,17 +45,27 @@ func (service *HTTPRestService) setNetworkInfo(networkName string, networkInfo *
 
 func (service *HTTPRestService) SavePnpIDMacaddressMapping(ctx context.Context) error {
 	// If mapping is already set, skip setting it again.
+	service.RLock()
 	if len(service.state.PnpIDByMacAddress) != 0 {
+		service.RUnlock()
 		return nil
 	}
+	service.RUnlock()
+
 	p := platform.NewExecClient(nil)
 	vfMacAddressMapping, err := platform.FetchMacAddressPnpIDMapping(ctx, p)
 	if err != nil {
 		return errors.Wrap(err, "failed to fetch MACAddressPnpIDMapping")
 	}
+
+	service.Lock()
+	defer service.Unlock()
+	if len(service.state.PnpIDByMacAddress) != 0 {
+		return nil
+	}
 	service.state.PnpIDByMacAddress = vfMacAddressMapping
-	if err = service.saveState(); err != nil {
-		logger.Errorf("Failed to save mapping to statefile: %v", err)
+	if err = service.saveState(ctx); err != nil {
+		return fmt.Errorf("persisting PnP ID by MAC mapping: %w", err)
 	}
 	return nil
 }
@@ -79,21 +91,20 @@ func (service *HTTPRestService) removeNetworkInfo(networkName string) {
 }
 
 // saveState writes CNS state to persistent store.
-func (service *HTTPRestService) saveState() error {
+func (service *HTTPRestService) saveState(ctx context.Context) error {
+	// Update time stamp.
+	service.state.TimeStamp = time.Now()
+	if service.persistentState != nil {
+		return service.persistDurableState(ctx)
+	}
+
 	// Skip if a store is not provided.
 	if service.store == nil {
 		logger.Printf("[Azure CNS] store not initialized.")
 		return nil
 	}
 
-	// Update time stamp.
-	service.state.TimeStamp = time.Now()
-	err := service.store.Write(storeKey, &service.state)
-	if err != nil {
-		logger.Errorf("[Azure CNS] Failed to save state, err: %v", err)
-	}
-
-	return err
+	return service.store.Write(storeKey, &service.state)
 }
 
 // restoreState restores CNS state from persistent store.
@@ -259,7 +270,9 @@ func (service *HTTPRestService) saveNetworkContainerGoalState(req cns.CreateNetw
 		return types.UnsupportedNetworkContainerType, errMsg
 	}
 
-	service.saveState()
+	if err := service.saveState(context.TODO()); err != nil { //nolint:contextcheck // Legacy NC mutation has no context parameter.
+		return types.UnexpectedError, fmt.Sprintf("persisting NC state: %v", err)
+	}
 	return 0, ""
 }
 
@@ -481,7 +494,7 @@ func (service *HTTPRestService) getAllNetworkContainerResponses(
 					logger.Printf("[Azure-CNS] Setting VfpUpdateComplete to %t for NCID: %s", vfpUpdateComplete, ncid)
 					ncstatus.VfpUpdateComplete = vfpUpdateComplete
 					service.state.ContainerStatus[ncid] = ncstatus
-					if err = service.saveState(); err != nil {
+					if err = service.saveState(context.TODO()); err != nil { //nolint:contextcheck // Legacy refresh path has no context parameter.
 						logger.Errorf("Failed to save goal states for nc %+v due to %s", getNetworkContainerResponse, err)
 					}
 				}
@@ -569,6 +582,30 @@ func (service *HTTPRestService) getAllNetworkContainerResponses(
 func (service *HTTPRestService) restoreNetworkState() error {
 	logger.Printf("[Azure CNS] Enter Restoring Network State")
 
+	if service.persistentState != nil {
+		if !service.persistentStateRebooted {
+			logger.Printf("[Azure CNS] Boot ID unchanged, no network rehydration required.")
+			return nil
+		}
+		for _, nwInfo := range service.state.Networks {
+			enableSnat := true
+			if nwInfo.Options != nil {
+				if _, ok := nwInfo.Options[dockerclient.OptDisableSnat]; ok {
+					enableSnat = false
+				}
+			}
+			if enableSnat {
+				if nwInfo.NicInfo == nil {
+					return fmt.Errorf("%w: network %q", errNetworkInterfaceInfoMissing, nwInfo.NetworkName)
+				}
+				if err := platform.SetOutboundSNAT(nwInfo.NicInfo.Subnet); err != nil {
+					return fmt.Errorf("restoring outbound SNAT for network %q: %w", nwInfo.NetworkName, err)
+				}
+			}
+		}
+		return nil
+	}
+
 	if service.store == nil {
 		logger.Printf("[Azure CNS] Store is not initialized, nothing to restore for network state.")
 		return nil
@@ -608,7 +645,7 @@ func (service *HTTPRestService) restoreNetworkState() error {
 				err := platform.SetOutboundSNAT(nwInfo.NicInfo.Subnet)
 				if err != nil {
 					logger.Printf("[Azure CNS] Error setting up SNAT outbound rule %v", err)
-					return err
+					return fmt.Errorf("restoring outbound SNAT for network %q: %w", nwInfo.NetworkName, err)
 				}
 			}
 		}

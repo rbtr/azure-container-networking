@@ -296,6 +296,7 @@ func TestSetCNSConfigDefaults(t *testing.T) {
 			},
 		},
 	}
+
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
@@ -303,4 +304,20 @@ func TestSetCNSConfigDefaults(t *testing.T) {
 			assert.Equal(t, tt.want, tt.in)
 		})
 	}
+}
+
+func TestStateStoreConfig(t *testing.T) {
+	config := CNSConfig{}
+	assert.Equal(t, StateStoreBackendJSON, config.EffectiveStateStoreBackend())
+	assert.Equal(t, StateStoreModeNormal, config.EffectiveStateStoreMode())
+	require.NoError(t, config.ValidateStateStore())
+
+	config.StateStoreBackend = StateStoreBackendBolt
+	require.NoError(t, config.ValidateStateStore())
+
+	config.StateStoreMode = StateStoreModeRollbackToJSON
+	require.Error(t, config.ValidateStateStore())
+
+	config.StateStoreBackend = StateStoreBackendJSON
+	require.NoError(t, config.ValidateStateStore())
 }

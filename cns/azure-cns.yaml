@@ -186,6 +186,8 @@ data:
       },
       "ChannelMode": "CRD",
       "InitializeFromCNI": true,
+      "StateStoreBackend": "json",
+      "StateStoreMode": "normal",
       "ManageEndpointState": false,
       "ProgramSNATIPTables" : false
     }

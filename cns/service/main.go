@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -47,6 +48,7 @@ import (
 	"github.com/Azure/azure-container-networking/cns/multitenantcontroller/multitenantoperator"
 	"github.com/Azure/azure-container-networking/cns/restserver"
 	restserverv2 "github.com/Azure/azure-container-networking/cns/restserver/v2"
+	persistentstate "github.com/Azure/azure-container-networking/cns/state"
 	cnipodprovider "github.com/Azure/azure-container-networking/cns/stateprovider/cni"
 	cnspodprovider "github.com/Azure/azure-container-networking/cns/stateprovider/cns"
 	cnstypes "github.com/Azure/azure-container-networking/cns/types"
@@ -532,6 +534,9 @@ func main() {
 		err                error
 		config             common.ServiceConfig
 		endpointStateStore store.KeyValueStore
+		persistentStore    *persistentstate.DB
+		persistentRebooted bool
+		lockclient         processlock.Interface
 	)
 
 	config.Version = version
@@ -566,6 +571,10 @@ func main() {
 		}
 	}
 	configuration.SetCNSConfigDefaults(cnsconfig)
+	if configErr := cnsconfig.ValidateStateStore(); configErr != nil {
+		logger.Errorf("invalid CNS state store configuration: %v", configErr)
+		return
+	}
 
 	disableTelemetry := cnsconfig.TelemetrySettings.DisableAll
 	if !disableTelemetry {
@@ -731,48 +740,130 @@ func main() {
 	// Log platform information.
 	logger.Printf("Running on %v", platform.GetOSInfo())
 
-	err = platform.CreateDirectory(storeFileLocation)
-	if err != nil {
+	if err = platform.CreateDirectory(storeFileLocation); err != nil {
 		logger.Errorf("Failed to create File Store directory %s, due to Error:%v", storeFileLocation, err.Error())
 		return
 	}
 
-	lockclient, err := processlock.NewFileLock(platform.CNILockPath + name + store.LockExtension)
-	if err != nil {
-		logger.Printf("Error initializing file lock:%v", err)
-		return
-	}
-
-	// Create the key value store.
-	storeFileName := storeFileLocation + name + ".json"
-	config.Store, err = store.NewJsonFileStore(storeFileName, lockclient, nil)
-	if err != nil {
-		logger.Errorf("Failed to create store file: %s, due to error %v\n", storeFileName, err)
-		return
-	}
-
-	// Initialize endpoint state store if cns is managing endpoint state.
+	legacyCNSPath := filepath.Join(storeFileLocation, name+".json")
+	legacyEndpointPath := ""
 	if cnsconfig.ManageEndpointState {
-		logger.Printf("[Azure CNS] Configured to manage endpoints state")
-		endpointStoreLock, err := processlock.NewFileLock(platform.CNILockPath + endpointStoreName + store.LockExtension) // nolint
-		if err != nil {
-			logger.Printf("Error initializing endpoint state file lock:%v", err)
+		if err = platform.CreateDirectory(endpointStorePath); err != nil {
+			logger.Errorf("Failed to create endpoint state directory %s, due to Error:%v", endpointStorePath, err.Error())
 			return
 		}
-		defer endpointStoreLock.Unlock() // nolint
+		legacyEndpointPath = filepath.Join(endpointStorePath, endpointStoreName+".json")
+	}
+	persistentStatePath := cnsconfig.StateStorePath
+	if persistentStatePath == "" {
+		persistentStatePath = filepath.Join(storeFileLocation, name+".db")
+	}
+	_, persistentStateStatErr := os.Stat(persistentStatePath)
+	persistentStateExisted := persistentStateStatErr == nil
 
-		err = platform.CreateDirectory(endpointStorePath)
-		if err != nil {
-			logger.Errorf("Failed to create File Store directory %s, due to Error:%v", storeFileLocation, err.Error())
+	if cnsconfig.EffectiveStateStoreMode() == configuration.StateStoreModeRollbackToJSON {
+		if _, statErr := os.Stat(persistentStatePath); statErr != nil {
+			logger.Errorf("failed to find Bolt state for rollback at %s: %v", persistentStatePath, statErr)
 			return
 		}
-		// Create the key value store.
-		storeFileName := endpointStorePath + endpointStoreName + ".json"
-		logger.Printf("EndpointStoreState path is %s", storeFileName)
-		endpointStateStore, err = store.NewJsonFileStore(storeFileName, endpointStoreLock, nil)
-		if err != nil {
-			logger.Errorf("Failed to create endpoint state store file: %s, due to error %v\n", storeFileName, err)
+		rollbackStore, openErr := persistentstate.Open(persistentStatePath, persistentstate.Options{})
+		if openErr != nil {
+			logger.Errorf("failed to open Bolt state for rollback: %v", openErr)
 			return
+		}
+		if exportErr := rollbackStore.ExportLegacy(rootCtx, legacyCNSPath, legacyEndpointPath); exportErr != nil {
+			_ = rollbackStore.Close()
+			logger.Errorf("failed to export Bolt state for JSON rollback: %v", exportErr)
+			return
+		}
+		if closeErr := rollbackStore.Close(); closeErr != nil {
+			logger.Errorf("failed to close Bolt state after rollback export: %v", closeErr)
+			return
+		}
+	}
+
+	switch cnsconfig.EffectiveStateStoreBackend() {
+	case configuration.StateStoreBackendBolt:
+		if err = platform.CreateDirectory(filepath.Dir(persistentStatePath)); err != nil {
+			logger.Errorf("failed to create Bolt state directory %s: %v", filepath.Dir(persistentStatePath), err)
+			return
+		}
+		persistentStore, err = persistentstate.Open(persistentStatePath, persistentstate.Options{})
+		if err != nil {
+			logger.Errorf("failed to open Bolt state store %s: %v", persistentStatePath, err)
+			return
+		}
+		defer func() {
+			if closeErr := persistentStore.Close(); closeErr != nil {
+				logger.Errorf("failed to close Bolt state store: %v", closeErr)
+			}
+		}()
+
+		bootID, bootErr := platform.BootID()
+		if bootErr != nil {
+			logger.Errorf("failed to determine boot ID: %v", bootErr)
+			return
+		}
+		if err = persistentStore.ImportLegacy(rootCtx, persistentstate.ImportOptions{
+			CNSJSONPath:         legacyCNSPath,
+			EndpointJSONPath:    legacyEndpointPath,
+			ManageEndpointState: cnsconfig.ManageEndpointState,
+			BootID:              bootID,
+		}); err != nil {
+			logger.Errorf("failed to import legacy CNS state: %v", err)
+			return
+		}
+		if err = persistentStore.SetManagedEndpointState(rootCtx, cnsconfig.ManageEndpointState); err != nil {
+			logger.Errorf("failed to apply endpoint state ownership mode: %v", err)
+			return
+		}
+		resetReadiness := config.ChannelMode == cns.CRD ||
+			config.ChannelMode == cns.MultiTenantCRD ||
+			config.ChannelMode == cns.AzureHost
+		if persistentRebooted, err = persistentStore.ApplyBoot(rootCtx, bootID, persistentstate.BootPolicy{
+			ClearEndpoints:                 runtime.GOOS != "windows",
+			ResetNetworkContainerReadiness: resetReadiness,
+		}); err != nil {
+			logger.Errorf("failed to apply CNS boot state policy: %v", err)
+			return
+		}
+		if !persistentStateExisted && !persistentRebooted {
+			if legacyInfo, statErr := os.Stat(legacyCNSPath); statErr == nil {
+				rebootTime, rebootErr := platform.NewExecClient(nil).GetLastRebootTime()
+				if rebootErr == nil && rebootTime.After(legacyInfo.ModTime()) {
+					persistentRebooted = true
+				}
+			}
+		}
+
+	case configuration.StateStoreBackendJSON:
+		var lockErr error
+		lockclient, lockErr = processlock.NewFileLock(platform.CNILockPath + name + store.LockExtension)
+		if lockErr != nil {
+			logger.Printf("Error initializing file lock:%v", lockErr)
+			return
+		}
+		config.Store, err = store.NewJsonFileStore(legacyCNSPath, lockclient, nil)
+		if err != nil {
+			logger.Errorf("Failed to create store file: %s, due to error %v\n", legacyCNSPath, err)
+			return
+		}
+
+		if cnsconfig.ManageEndpointState {
+			logger.Printf("[Azure CNS] Configured to manage endpoints state")
+			endpointStoreLock, lockErr := processlock.NewFileLock(platform.CNILockPath + endpointStoreName + store.LockExtension)
+			if lockErr != nil {
+				logger.Printf("Error initializing endpoint state file lock:%v", lockErr)
+				return
+			}
+			defer endpointStoreLock.Unlock() //nolint:errcheck
+
+			logger.Printf("EndpointStoreState path is %s", legacyEndpointPath)
+			endpointStateStore, err = store.NewJsonFileStore(legacyEndpointPath, endpointStoreLock, nil)
+			if err != nil {
+				logger.Errorf("Failed to create endpoint state store file: %s, due to error %v\n", legacyEndpointPath, err)
+				return
+			}
 		}
 	}
 
@@ -794,6 +885,8 @@ func main() {
 		logger.Errorf("Failed to create CNS object, err:%v.\n", err)
 		return
 	}
+	httpRemoteRestService.SetPersistentStateStore(persistentStore)
+	httpRemoteRestService.SetPersistentStateRebooted(persistentRebooted)
 
 	// Set CNS options.
 	httpRemoteRestService.SetOption(acn.OptCnsURL, cnsURL)
@@ -1160,8 +1253,10 @@ func main() {
 		httpRemoteRestService.Stop()
 	}
 
-	if err = lockclient.Unlock(); err != nil {
-		logger.Errorf("lockclient cns unlock error:%v", err)
+	if lockclient != nil {
+		if err = lockclient.Unlock(); err != nil {
+			logger.Errorf("lockclient cns unlock error:%v", err)
+		}
 	}
 
 	logger.Printf("CNS exited")
@@ -1434,14 +1529,31 @@ func InitializeCRDState(ctx context.Context, z *zap.Logger, httpRestService cns.
 		}
 	}
 
-	// perform state migration from CNI in case CNS is set to manage the endpoint state and has emty state
-	if cnsconfig.EnableStateMigration && !httpRestServiceImplementation.EndpointStateStore.Exists() {
-		if err = PopulateCNSEndpointState(httpRestServiceImplementation.EndpointStateStore); err != nil {
-			return errors.Wrap(err, "failed to create CNS EndpointState From CNI")
-		}
-		// endpoint state needs to be loaded in memory so the subsequent Delete calls remove the state and release the IPs.
-		if err = httpRestServiceImplementation.EndpointStateStore.Read(restserver.EndpointStoreKey, &httpRestServiceImplementation.EndpointState); err != nil {
-			return errors.Wrap(err, "failed to restore endpoint state")
+	// Perform state migration from CNI when CNS owns endpoint state and has no
+	// existing endpoint records.
+	if cnsconfig.EnableStateMigration && cnsconfig.ManageEndpointState {
+		if persistentStore := httpRestServiceImplementation.PersistentStateStore(); persistentStore != nil {
+			snapshot, snapshotErr := persistentStore.Snapshot(ctx)
+			if snapshotErr != nil {
+				return errors.Wrap(snapshotErr, "failed to inspect persistent endpoint state")
+			}
+			if len(snapshot.Endpoints) == 0 {
+				endpoints, migrationErr := cnspodprovider.MigrateCNISate()
+				if migrationErr != nil {
+					return errors.Wrap(migrationErr, "failed to create CNS endpoint state from CNI")
+				}
+				if migrationErr = httpRestServiceImplementation.ReplacePersistentEndpoints(ctx, endpoints); migrationErr != nil {
+					return errors.Wrap(migrationErr, "failed to persist CNS endpoint state from CNI")
+				}
+			}
+		} else if !httpRestServiceImplementation.EndpointStateStore.Exists() {
+			if err = PopulateCNSEndpointState(httpRestServiceImplementation.EndpointStateStore); err != nil {
+				return errors.Wrap(err, "failed to create CNS EndpointState From CNI")
+			}
+			// Endpoint state needs to be loaded in memory so subsequent Delete calls remove state and release IPs.
+			if err = httpRestServiceImplementation.EndpointStateStore.Read(restserver.EndpointStoreKey, &httpRestServiceImplementation.EndpointState); err != nil {
+				return errors.Wrap(err, "failed to restore endpoint state")
+			}
 		}
 	}
 
@@ -1662,7 +1774,11 @@ func getPodInfoByIPProvider(
 	switch {
 	case cnsconfig.ManageEndpointState:
 		logger.Printf("Initializing from self managed endpoint store")
-		podInfoByIPProvider, err = cnspodprovider.New(httpRestServiceImplementation.EndpointStateStore) // get reference to endpoint state store from rest server
+		if persistentStore := httpRestServiceImplementation.PersistentStateStore(); persistentStore != nil {
+			podInfoByIPProvider, err = cnspodprovider.NewPersistent(ctx, persistentStore)
+		} else {
+			podInfoByIPProvider, err = cnspodprovider.New(httpRestServiceImplementation.EndpointStateStore)
+		}
 		if err != nil {
 			if errors.Is(err, store.ErrKeyNotFound) {
 				logger.Printf("[Azure CNS] No endpoint state found, skipping initializing CNS state")

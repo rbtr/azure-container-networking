@@ -3,6 +3,7 @@ package configuration
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -21,6 +22,22 @@ const (
 	EnvCNSConfig      = "CNS_CONFIGURATION_PATH"
 	defaultConfigName = "cns_config.json"
 )
+
+type StateStoreBackend string
+
+const (
+	StateStoreBackendJSON StateStoreBackend = "json"
+	StateStoreBackendBolt StateStoreBackend = "bolt"
+)
+
+type StateStoreMode string
+
+const (
+	StateStoreModeNormal         StateStoreMode = "normal"
+	StateStoreModeRollbackToJSON StateStoreMode = "rollback-to-json"
+)
+
+var ErrInvalidStateStoreConfig = errors.New("invalid state store configuration")
 
 type CNSConfig struct {
 	AZRSettings                     AZRSettings
@@ -51,6 +68,9 @@ type CNSConfig struct {
 	MellanoxMonitorIntervalSecs     int
 	MetricsBindAddress              string
 	ProgramSNATIPTables             bool
+	StateStoreBackend               StateStoreBackend
+	StateStoreMode                  StateStoreMode
+	StateStorePath                  string
 	SyncHostNCTimeoutMs             int
 	SyncHostNCVersionIntervalMs     int
 	TLSCertificatePath              string
@@ -65,6 +85,44 @@ type CNSConfig struct {
 	GRPCSettings                    GRPCSettings
 	MinTLSVersion                   string
 	MtlsClientCertSubjectName       string
+}
+
+func (cnsconfig *CNSConfig) EffectiveStateStoreBackend() StateStoreBackend {
+	if cnsconfig.StateStoreBackend == "" {
+		return StateStoreBackendJSON
+	}
+	return cnsconfig.StateStoreBackend
+}
+
+func (cnsconfig *CNSConfig) EffectiveStateStoreMode() StateStoreMode {
+	if cnsconfig.StateStoreMode == "" {
+		return StateStoreModeNormal
+	}
+	return cnsconfig.StateStoreMode
+}
+
+func (cnsconfig *CNSConfig) ValidateStateStore() error {
+	switch cnsconfig.EffectiveStateStoreBackend() {
+	case StateStoreBackendJSON, StateStoreBackendBolt:
+	default:
+		return fmt.Errorf("%w: unsupported backend %q", ErrInvalidStateStoreConfig, cnsconfig.StateStoreBackend)
+	}
+
+	switch cnsconfig.EffectiveStateStoreMode() {
+	case StateStoreModeNormal:
+	case StateStoreModeRollbackToJSON:
+		if cnsconfig.EffectiveStateStoreBackend() != StateStoreBackendJSON {
+			return fmt.Errorf(
+				"%w: mode %q requires backend %q",
+				ErrInvalidStateStoreConfig,
+				StateStoreModeRollbackToJSON,
+				StateStoreBackendJSON,
+			)
+		}
+	default:
+		return fmt.Errorf("%w: unsupported mode %q", ErrInvalidStateStoreConfig, cnsconfig.StateStoreMode)
+	}
+	return nil
 }
 
 type TelemetrySettings struct {

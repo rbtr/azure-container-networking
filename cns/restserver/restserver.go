@@ -17,6 +17,7 @@ import (
 	"github.com/Azure/azure-container-networking/cns/networkcontainers"
 	"github.com/Azure/azure-container-networking/cns/nodesubnet"
 	"github.com/Azure/azure-container-networking/cns/routes"
+	persistentstate "github.com/Azure/azure-container-networking/cns/state"
 	"github.com/Azure/azure-container-networking/cns/types"
 	"github.com/Azure/azure-container-networking/cns/types/bounded"
 	"github.com/Azure/azure-container-networking/cns/wireserver"
@@ -80,19 +81,22 @@ type iptablesGetter interface {
 // HTTPRestService represents http listener for CNS - Container Networking Service.
 type HTTPRestService struct {
 	*cns.Service
-	dockerClient             *dockerclient.Client
-	wscli                    interfaceGetter
-	iptables                 iptablesGetter
-	nma                      nmagentClient
-	wsproxy                  wireserverProxy
-	homeAzMonitor            *HomeAzMonitor
-	networkContainer         *networkcontainers.NetworkContainers
-	PodIPIDByPodInterfaceKey map[string][]string                  // PodInterfaceId is key and value is slice of Pod IP (SecondaryIP) uuids.
-	PodIPConfigState         map[string]cns.IPConfigurationStatus // Secondary IP ID(uuid) is key
-	routingTable             *routes.RoutingTable
-	store                    store.KeyValueStore
-	state                    *httpRestServiceState
-	podsPendingIPAssignment  *bounded.TimedSet
+	dockerClient              *dockerclient.Client
+	wscli                     interfaceGetter
+	iptables                  iptablesGetter
+	nma                       nmagentClient
+	wsproxy                   wireserverProxy
+	homeAzMonitor             *HomeAzMonitor
+	networkContainer          *networkcontainers.NetworkContainers
+	PodIPIDByPodInterfaceKey  map[string][]string                  // PodInterfaceId is key and value is slice of Pod IP (SecondaryIP) uuids.
+	PodIPConfigState          map[string]cns.IPConfigurationStatus // Secondary IP ID(uuid) is key
+	routingTable              *routes.RoutingTable
+	store                     store.KeyValueStore
+	persistentState           *persistentstate.DB
+	persistentStateGeneration uint64
+	persistentStateRebooted   bool
+	state                     *httpRestServiceState
+	podsPendingIPAssignment   *bounded.TimedSet
 	sync.RWMutex
 	dncPartitionKey            string
 	EndpointState              map[string]*EndpointInfo // key : container id
@@ -104,6 +108,18 @@ type HTTPRestService struct {
 	PnpIDByMacAddress          map[string]string
 	imdsClient                 imdsClient
 	nodesubnetIPFetcher        *nodesubnet.IPFetcher
+}
+
+func (service *HTTPRestService) SetPersistentStateStore(database *persistentstate.DB) {
+	service.persistentState = database
+}
+
+func (service *HTTPRestService) SetPersistentStateRebooted(rebooted bool) {
+	service.persistentStateRebooted = rebooted
+}
+
+func (service *HTTPRestService) PersistentStateStore() *persistentstate.DB {
+	return service.persistentState
 }
 
 type CNIConflistGenerator interface {
@@ -270,7 +286,12 @@ func (service *HTTPRestService) Init(config *common.ServiceConfig) error {
 		return err
 	}
 
-	if err = service.restoreState(); err != nil {
+	if service.persistentState != nil {
+		err = service.restorePersistentState(context.TODO()) //nolint:contextcheck // Init has no context parameter.
+	} else {
+		err = service.restoreState()
+	}
+	if err != nil {
 		return fmt.Errorf("restoring state: %w", err)
 	}
 	err = service.restoreNetworkState()
@@ -309,6 +330,7 @@ func (service *HTTPRestService) Init(config *common.ServiceConfig) error {
 	listener.AddHandler(cns.PathDebugIPAddresses, service.HandleDebugIPAddresses)
 	listener.AddHandler(cns.PathDebugPodContext, service.HandleDebugPodContext)
 	listener.AddHandler(cns.PathDebugRestData, service.HandleDebugRestData)
+	listener.AddHandler(cns.PathDebugPersistentState, service.HandleDebugPersistentState)
 	listener.AddHandler(cns.NetworkContainersURLPath, service.getOrRefreshNetworkContainers)
 	listener.AddHandler(cns.GetHomeAz, service.getHomeAz)
 	listener.AddHandler(cns.EndpointPath, service.EndpointHandlerAPI)

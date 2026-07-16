@@ -149,7 +149,10 @@ func (service *HTTPRestService) SyncNodeStatus(dncEP, infraVnet, nodeID string, 
 	}
 
 	service.Lock()
-	service.saveState()
+	if saveErr := service.saveState(context.TODO()); saveErr != nil { //nolint:contextcheck // Legacy SyncNodeStatus has no context parameter.
+		service.Unlock()
+		return types.UnexpectedError, fmt.Sprintf("persisting synchronized node state: %v", saveErr)
+	}
 	service.Unlock()
 
 	// delete dangling NCs
@@ -547,7 +550,9 @@ func (service *HTTPRestService) DeleteNetworkContainerInternal(
 		}
 	}
 
-	service.saveState()
+	if err := service.saveState(context.TODO()); err != nil { //nolint:contextcheck // Legacy internal delete has no context parameter.
+		return types.UnexpectedError
+	}
 	return types.Success
 }
 
@@ -584,7 +589,9 @@ func (service *HTTPRestService) MustEnsureNoStaleNCs(validNCIDs []string) {
 	}
 
 	if mutated {
-		_ = service.saveState()
+		if err := service.saveState(context.TODO()); err != nil { //nolint:contextcheck // Legacy stale-state cleanup has no context parameter.
+			panic(fmt.Sprintf("failed to persist stale NC removal: %v", err))
+		}
 	}
 }
 

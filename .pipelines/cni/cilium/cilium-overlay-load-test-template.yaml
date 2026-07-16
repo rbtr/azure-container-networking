@@ -13,6 +13,7 @@ parameters:
   cni: "cilium"
   upgradeScenario: ""
   ciliumVersionOverwrite: false
+  stateValidationMode: ""
 
 # Condition confirms that:
 # Previous job has reported Succeeded. Previous job is currently setup which controls variable assignment and we are dependent on its success.
@@ -213,6 +214,11 @@ stages:
                 sudo -E env "PATH=$PATH" make test-integration AZURE_IPAM_VERSION=${IPAM} CNS_VERSION=${CNS} INSTALL_CNS=true INSTALL_OVERLAY=true CNS_IMAGE_REPO=$(CNS_IMAGE_REPO) IPAM_IMAGE_REPO=$(IPAM_IMAGE_REPO)
                 kubectl get po -owide -A
                 kubectl get crd -A
+          - ${{ if ne(parameters.stateValidationMode, '') }}:
+            - template: ../load-test-templates/set-cns-state-mode-template.yaml
+              parameters:
+                clusterName: ${{ parameters.clusterName }}-$(commitID)
+                mode: ${{ parameters.stateValidationMode }}
 
       - job: deploy_pods
         condition: and( and( not(canceled()), not(failed()) ), or( contains(variables.CONTROL_SCENARIO, 'scaleTest') , contains(variables.CONTROL_SCENARIO, 'all') ) )

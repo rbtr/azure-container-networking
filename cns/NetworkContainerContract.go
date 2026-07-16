@@ -38,6 +38,7 @@ const (
 	PathDebugIPAddresses                     = "/debug/ipaddresses"
 	PathDebugPodContext                      = "/debug/podcontext"
 	PathDebugRestData                        = "/debug/restdata"
+	PathDebugPersistentState                 = "/debug/persistentstate"
 	NumberOfCPUCores                         = NumberOfCPUCoresPath
 	NMAgentSupportedAPIs                     = NmAgentSupportedApisPath
 	EndpointAPI                              = EndpointPath

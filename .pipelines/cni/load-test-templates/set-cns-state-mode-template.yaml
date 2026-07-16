@@ -1,0 +1,88 @@
+parameters:
+  clusterName: ""
+  mode: ""
+
+steps:
+  - task: AzureCLI@2
+    inputs:
+      azureSubscription: $(BUILD_VALIDATIONS_SERVICE_CONNECTION)
+      scriptLocation: "inlineScript"
+      scriptType: "bash"
+      addSpnToEnvironment: true
+      inlineScript: |
+        set -euo pipefail
+        make -C ./hack/aks set-kubeconf AZCLI=az CLUSTER=${{ parameters.clusterName }}
+
+        backend=json
+        storeMode=normal
+        secondStart=false
+        normalizeRollback=false
+
+        case "${{ parameters.mode }}" in
+          json-baseline)
+            ;;
+          bolt-migrate)
+            backend=bolt
+            ;;
+          bolt-second-start)
+            backend=bolt
+            secondStart=true
+            ;;
+          rollback-json)
+            backend=json
+            storeMode=rollback-to-json
+            normalizeRollback=true
+            ;;
+          *)
+            echo "unsupported CNS state validation mode: ${{ parameters.mode }}"
+            exit 1
+            ;;
+        esac
+
+        patch_config() {
+          local selectedBackend=$1
+          local selectedMode=$2
+          local currentConfig
+          currentConfig=$(kubectl -n kube-system get configmap cns-config -o jsonpath='{.data.cns_config\.json}')
+          if [ -z "$currentConfig" ]; then
+            echo "cns-config data.cns_config.json is empty"
+            exit 1
+          fi
+
+          local patchedConfig
+          patchedConfig=$(echo "$currentConfig" | jq \
+            --arg backend "$selectedBackend" \
+            --arg mode "$selectedMode" \
+            '.StateStoreBackend = $backend | .StateStoreMode = $mode')
+          kubectl -n kube-system patch configmap cns-config --type merge \
+            -p "{\"data\":{\"cns_config.json\":$(jq -Rs . <<<"$patchedConfig")}}"
+        }
+
+        restart_cns() {
+          if kubectl -n kube-system get ds azure-cns >/dev/null 2>&1; then
+            kubectl -n kube-system rollout restart ds azure-cns
+            kubectl -n kube-system rollout status ds azure-cns
+          fi
+          if kubectl -n kube-system get ds azure-cns-win >/dev/null 2>&1; then
+            kubectl -n kube-system rollout restart ds azure-cns-win
+            kubectl -n kube-system rollout status ds azure-cns-win
+          fi
+        }
+
+        echo "Applying CNS state mode=${{ parameters.mode }} backend=$backend storeMode=$storeMode"
+        patch_config "$backend" "$storeMode"
+        restart_cns
+
+        if [ "$normalizeRollback" = "true" ]; then
+          echo "Rollback export completed; returning JSON backend to normal startup mode"
+          patch_config json normal
+          restart_cns
+        elif [ "$secondStart" = "true" ]; then
+          echo "Triggering second CNS start against Bolt-only state"
+          restart_cns
+        fi
+
+        kubectl -n kube-system get configmap cns-config -o jsonpath='{.data.cns_config\.json}' |
+          jq '{StateStoreBackend, StateStoreMode, EnableStateMigration, ManageEndpointState, InitializeFromCNI}'
+    name: "SetCNSStateMode"
+    displayName: "Set CNS State Validation Mode"

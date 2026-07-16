@@ -1,6 +1,7 @@
 package cns
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/Azure/azure-container-networking/cns"
 	"github.com/Azure/azure-container-networking/cns/logger"
 	"github.com/Azure/azure-container-networking/cns/restserver"
+	persistentstate "github.com/Azure/azure-container-networking/cns/state"
 	"github.com/Azure/azure-container-networking/store"
 	"github.com/pkg/errors"
 	kexec "k8s.io/utils/exec"
@@ -18,6 +20,40 @@ import (
 // New returns a PodInfoByIPProvider that reads from CNS statefile endpoint store.
 func New(endpointStore store.KeyValueStore) (cns.PodInfoByIPProvider, error) {
 	return podInfoProvider(endpointStore)
+}
+
+func NewPersistent(ctx context.Context, db *persistentstate.DB) (cns.PodInfoByIPProvider, error) {
+	snapshot, err := db.Snapshot(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("reading persistent CNS state: %w", err)
+	}
+	state := make(map[string]*restserver.EndpointInfo, len(snapshot.Endpoints))
+	for containerID, endpoint := range snapshot.Endpoints {
+		info := &restserver.EndpointInfo{
+			PodName:       endpoint.PodName,
+			PodNamespace:  endpoint.PodNamespace,
+			IfnameToIPMap: make(map[string]*restserver.IPInfo, len(endpoint.IfnameToIPMap)),
+		}
+		for ifName, ipInfo := range endpoint.IfnameToIPMap {
+			if ipInfo == nil {
+				continue
+			}
+			info.IfnameToIPMap[ifName] = &restserver.IPInfo{
+				IPv4:               ipInfo.IPv4,
+				IPv6:               ipInfo.IPv6,
+				HnsEndpointID:      ipInfo.HNSEndpointID,
+				HnsNetworkID:       ipInfo.HNSNetworkID,
+				HostVethName:       ipInfo.HostVethName,
+				MacAddress:         ipInfo.MACAddress,
+				NetworkContainerID: ipInfo.NetworkContainerID,
+				NICType:            ipInfo.NICType,
+			}
+		}
+		state[containerID] = info
+	}
+	return cns.PodInfoByIPProviderFunc(func() (map[string]cns.PodInfo, error) {
+		return endpointStateToPodInfoByIP(state)
+	}), nil
 }
 
 func podInfoProvider(endpointStore store.KeyValueStore) (cns.PodInfoByIPProvider, error) {

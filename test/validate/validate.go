@@ -199,13 +199,6 @@ func (v *Validator) validateIPs(ctx context.Context, stateFileIps stateFileIpsFu
 			if err != nil {
 				return errors.Wrapf(err, "failed to get pod ips from state file on node %v", nodeName)
 			}
-			if len(filePodIps) == 0 && v.restartCase {
-				comparison = ipComparisonResult{}
-				converged = true
-				log.Printf("No pods found on node %s", nodeName)
-				break
-			}
-
 			podIps := getPodIPsWithoutNodeIP(ctx, v.clientset, nodes.Items[index])
 			// include IPs from Cilium internal endpoints (reserved:ingress) that are not real K8s pods.
 			// These only exist when L7 policy is enabled, indicated by the acns-security-agent pod with cilium-envoy container.
@@ -400,7 +393,7 @@ func cnsCacheStateFileIps(result []byte) (map[string]string, error) {
 
 func cnsManagedStateFileIps(result []byte) (map[string]string, error) {
 	var cnsResult CnsManagedState
-	err := json.Unmarshal(result, &cnsResult)
+	err := json.Unmarshal(result, &cnsResult) //nolint:musttag // Legacy endpoint state uses existing untagged CNS types.
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to unmarshal cns endpoint list")
 	}
@@ -409,7 +402,9 @@ func cnsManagedStateFileIps(result []byte) (map[string]string, error) {
 	for _, v := range cnsResult.Endpoints {
 		for ifName, ip := range v.IfnameToIPMap {
 			if ifName == "eth0" {
-				cnsPodIps[ip.IPv4[0].IP.String()] = v.PodName
+				for _, ipNet := range ip.IPv4 {
+					cnsPodIps[ipNet.IP.String()] = v.PodName
+				}
 			}
 		}
 	}

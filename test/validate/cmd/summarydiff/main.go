@@ -2,16 +2,21 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 )
+
+var errSummaryRegression = errors.New("state validation summary regression")
 
 type validationSummary struct {
 	Checks []validationCheckEntry `json:"checks,omitempty"`
 }
 
 type validationCheckEntry struct {
+	CheckName      string   `json:"checkName"`
+	NodeName       string   `json:"nodeName"`
 	ExpectedCount  int      `json:"expectedCount"`
 	ActualCount    int      `json:"actualCount"`
 	MissingIPs     []string `json:"missingIPs,omitempty"`
@@ -56,28 +61,16 @@ func main() {
 		os.Exit(2)
 	}
 
-	baselineStats := aggregate(baseline)
-	candidateStats := aggregate(candidate)
-
-	output := compareOutput{Baseline: baselineStats, Candidate: candidateStats}
-	raw, _ := json.MarshalIndent(output, "", "  ")
+	output := compareOutput{Baseline: aggregate(baseline), Candidate: aggregate(candidate)}
+	raw, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode comparison output: %v\n", err)
+		os.Exit(2)
+	}
 	fmt.Println(string(raw))
 
-	if candidateStats.TotalChecks != baselineStats.TotalChecks {
-		fmt.Fprintf(
-			os.Stderr,
-			"summarydiff failed: total checks mismatch baseline=%d candidate=%d\n",
-			baselineStats.TotalChecks,
-			candidateStats.TotalChecks,
-		)
-		os.Exit(1)
-	}
-
-	if candidateStats.FailedChecks > baselineStats.FailedChecks ||
-		candidateStats.MissingIPs > baselineStats.MissingIPs ||
-		candidateStats.UnexpectedIPs > baselineStats.UnexpectedIPs ||
-		candidateStats.DuplicateIPs > baselineStats.DuplicateIPs {
-		fmt.Fprintln(os.Stderr, "summarydiff failed: candidate has worse mismatch metrics than baseline")
+	if err := compareSummaries(baseline, candidate); err != nil {
+		fmt.Fprintf(os.Stderr, "summarydiff failed: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -85,19 +78,20 @@ func main() {
 func readSummary(path string) (validationSummary, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return validationSummary{}, err
+		return validationSummary{}, fmt.Errorf("reading summary %q: %w", path, err)
 	}
 
-	var s validationSummary
-	if err := json.Unmarshal(raw, &s); err != nil {
-		return validationSummary{}, err
+	var summary validationSummary
+	if err := json.Unmarshal(raw, &summary); err != nil {
+		return validationSummary{}, fmt.Errorf("decoding summary %q: %w", path, err)
 	}
-	return s, nil
+	return summary, nil
 }
 
-func aggregate(s validationSummary) summaryStats {
+func aggregate(summary validationSummary) summaryStats {
 	stats := summaryStats{}
-	for _, check := range s.Checks {
+	for i := range summary.Checks {
+		check := summary.Checks[i]
 		stats.TotalChecks++
 		stats.ExpectedIPsSum += check.ExpectedCount
 		stats.ActualIPsSum += check.ActualCount
@@ -109,4 +103,54 @@ func aggregate(s validationSummary) summaryStats {
 		}
 	}
 	return stats
+}
+
+func compareSummaries(baseline, candidate validationSummary) error {
+	baselineStats := aggregate(baseline)
+	candidateStats := aggregate(candidate)
+	if candidateStats.TotalChecks != baselineStats.TotalChecks {
+		return fmt.Errorf(
+			"%w: total checks mismatch baseline=%d candidate=%d",
+			errSummaryRegression,
+			baselineStats.TotalChecks,
+			candidateStats.TotalChecks,
+		)
+	}
+	if candidateStats.FailedChecks > baselineStats.FailedChecks ||
+		candidateStats.MissingIPs > baselineStats.MissingIPs ||
+		candidateStats.UnexpectedIPs > baselineStats.UnexpectedIPs ||
+		candidateStats.DuplicateIPs > baselineStats.DuplicateIPs {
+		return fmt.Errorf("%w: candidate has worse mismatch metrics than baseline", errSummaryRegression)
+	}
+
+	baselineByCheck := make(map[string]validationCheckEntry, len(baseline.Checks))
+	for i := range baseline.Checks {
+		check := baseline.Checks[i]
+		baselineByCheck[check.CheckName+"\x00"+check.NodeName] = check
+	}
+	for i := range candidate.Checks {
+		check := candidate.Checks[i]
+		key := check.CheckName + "\x00" + check.NodeName
+		baselineCheck, ok := baselineByCheck[key]
+		if !ok {
+			return fmt.Errorf("%w: candidate contains unexpected check %q on node %q", errSummaryRegression, check.CheckName, check.NodeName)
+		}
+		if check.ExpectedCount < baselineCheck.ExpectedCount || check.ActualCount < baselineCheck.ActualCount {
+			return fmt.Errorf(
+				"%w: candidate check %q on node %q lost IPs: expected baseline=%d candidate=%d actual baseline=%d candidate=%d",
+				errSummaryRegression,
+				check.CheckName,
+				check.NodeName,
+				baselineCheck.ExpectedCount,
+				check.ExpectedCount,
+				baselineCheck.ActualCount,
+				check.ActualCount,
+			)
+		}
+		delete(baselineByCheck, key)
+	}
+	if len(baselineByCheck) != 0 {
+		return fmt.Errorf("%w: candidate is missing %d baseline checks", errSummaryRegression, len(baselineByCheck))
+	}
+	return nil
 }

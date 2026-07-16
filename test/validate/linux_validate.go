@@ -18,8 +18,13 @@ const (
 )
 
 var (
-	restartNetworkCmd           = []string{"bash", "-c", "systemctl restart systemd-networkd"}
-	cnsManagedStateFileCmd      = []string{"bash", "-c", "cat /var/run/azure-cns/azure-endpoints.json"}
+	restartNetworkCmd      = []string{"bash", "-c", "systemctl restart systemd-networkd"}
+	cnsManagedStateFileCmd = []string{
+		"bash",
+		"-c",
+		"if output=$(curl -sf localhost:10090/debug/persistentstate -d '{}'); then " +
+			"printf '%s' \"$output\"; else cat /var/run/azure-cns/azure-endpoints.json; fi",
+	}
 	azureVnetStateFileCmd       = []string{"bash", "-c", "cat /var/run/azure-vnet.json"}
 	azureVnetIpamStateCmd       = []string{"bash", "-c", "cat /var/run/azure-vnet-ipam.json"}
 	ciliumStateFileCmd          = []string{"cilium", "endpoint", "list", "-o", "json"}
@@ -215,7 +220,7 @@ type AzureVnetEndpointInfo struct {
 
 func cnsManagedStateFileDualStackIps(result []byte) (map[string]string, error) {
 	var cnsResult CnsManagedState
-	err := json.Unmarshal(result, &cnsResult)
+	err := json.Unmarshal(result, &cnsResult) //nolint:musttag // Legacy endpoint state uses existing untagged CNS types.
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to unmarshal cns endpoint list")
 	}
@@ -224,8 +229,12 @@ func cnsManagedStateFileDualStackIps(result []byte) (map[string]string, error) {
 	for _, v := range cnsResult.Endpoints {
 		for ifName, ip := range v.IfnameToIPMap {
 			if ifName == "eth0" {
-				cnsPodIps[ip.IPv4[0].IP.String()] = v.PodName
-				cnsPodIps[ip.IPv6[0].IP.String()] = v.PodName
+				for _, ipNet := range ip.IPv4 {
+					cnsPodIps[ipNet.IP.String()] = v.PodName
+				}
+				for _, ipNet := range ip.IPv6 {
+					cnsPodIps[ipNet.IP.String()] = v.PodName
+				}
 			}
 		}
 	}

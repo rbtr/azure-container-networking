@@ -13,6 +13,7 @@ parameters:
   osSKU: Ubuntu
   osSkuWin: Windows2022
   upgradeScenario: ""
+  stateValidationMode: ""
 
 # CNIv2
 # + Should be able to scale up/down the pods successfully certain number of times.
@@ -235,6 +236,11 @@ stages:
                 done
               name: kubeproxy
               displayName: Restart Kubeproxy on Windows nodes
+          - ${{ if ne(parameters.stateValidationMode, '') }}:
+            - template: ../load-test-templates/set-cns-state-mode-template.yaml
+              parameters:
+                clusterName: ${{ parameters.clusterName }}-$(commitID)
+                mode: ${{ parameters.stateValidationMode }}
 
       - template: ../../npm/npm-cni-integration-test.yaml
         parameters:
