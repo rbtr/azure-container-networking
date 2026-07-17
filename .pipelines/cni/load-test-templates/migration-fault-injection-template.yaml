@@ -3,6 +3,7 @@ parameters:
   os: "linux"
   # linux: cilium, cniv1, cniv2, dualstack; windows: cniv1, cniv2, stateless
   cni: "cilium"
+  configMapName: "cns-config"
   # all, add-before-endpoint-commit, delete-after-intent-commit, endpoint-patch, restart-during-scale
   scenario: "all"
   scaleReplicas: 20
@@ -35,6 +36,7 @@ steps:
         MIGRATION_FAULT_SCENARIO="${{ parameters.scenario }}" \
         MIGRATION_FAULT_OS="${{ parameters.os }}" \
         MIGRATION_FAULT_CNI="${{ parameters.cni }}" \
+        MIGRATION_FAULT_CONFIG_MAP="${{ parameters.configMapName }}" \
         MIGRATION_FAULT_RUN_ID="${{ parameters.runID }}" \
         MIGRATION_FAULT_ARTIFACT_DIR="$artifactDir" \
         MIGRATION_FAULT_SCALE_REPLICAS="${{ parameters.scaleReplicas }}" \

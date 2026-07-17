@@ -170,7 +170,7 @@ stages:
       initializeFromCNI: "true"
       expectedAuthority: bolt
       expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
-      enableFaultInjectionHooks: ${{ parameters.enableFaultInjectionHooks }}
+      enableFaultInjectionHooks: false
 
   - template: lane.stage.yaml
     parameters:
@@ -196,7 +196,7 @@ stages:
       initializeFromCNI: "true"
       expectedAuthority: bolt
       expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
-      enableFaultInjectionHooks: ${{ parameters.enableFaultInjectionHooks }}
+      enableFaultInjectionHooks: false
 
   - template: lane.stage.yaml
     parameters:
@@ -222,7 +222,7 @@ stages:
       initializeFromCNI: "true"
       expectedAuthority: bolt
       expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
-      enableFaultInjectionHooks: ${{ parameters.enableFaultInjectionHooks }}
+      enableFaultInjectionHooks: false
 
   - template: lane.stage.yaml
     parameters:

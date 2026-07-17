@@ -19,6 +19,7 @@ const (
 	envFaultScenario       = "MIGRATION_FAULT_SCENARIO"
 	envFaultOS             = "MIGRATION_FAULT_OS"
 	envFaultCNI            = "MIGRATION_FAULT_CNI"
+	envFaultConfigMap      = "MIGRATION_FAULT_CONFIG_MAP"
 	envFaultRunID          = "MIGRATION_FAULT_RUN_ID"
 	envFaultArtifactDir    = "MIGRATION_FAULT_ARTIFACT_DIR"
 	envFaultScaleReplicas  = "MIGRATION_FAULT_SCALE_REPLICAS"
@@ -65,6 +66,7 @@ type faultConfig struct {
 	Scenario      scenario
 	OS            string
 	CNI           string
+	ConfigMapName string
 	RunID         string
 	ArtifactDir   string
 	ScaleReplicas int32
@@ -87,6 +89,7 @@ func loadFaultConfig(getenv func(string) string) (faultConfig, error) {
 		Scenario:      scenario(valueOrDefault(getenv(envFaultScenario), string(scenarioAll))),
 		OS:            strings.ToLower(valueOrDefault(getenv(envFaultOS), linuxOS)),
 		CNI:           strings.ToLower(valueOrDefault(getenv(envFaultCNI), "cilium")),
+		ConfigMapName: valueOrDefault(getenv(envFaultConfigMap), "cns-config"),
 		RunID:         getenv(envFaultRunID),
 		ArtifactDir:   getenv(envFaultArtifactDir),
 		ScaleReplicas: defaultScaleReplicas,

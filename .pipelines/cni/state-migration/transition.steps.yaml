@@ -207,6 +207,7 @@ steps:
         clusterName: ${{ parameters.clusterName }}
         os: ${{ parameters.os }}
         cni: ${{ parameters.cni }}
+        configMapName: ${{ parameters.configMapName }}
         scenario: all
         scaleReplicas: ${{ parameters.replicasPerNode }}
         runID: "$(Build.BuildId)-${{ parameters.lane }}-${{ parameters.transition }}-$(System.JobAttempt)"

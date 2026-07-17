@@ -153,7 +153,7 @@ func newClusterHarness(t *testing.T, ctx context.Context, cfg faultConfig) *clus
 }
 
 func (harness *clusterHarness) validateCNSConfig(ctx context.Context) error {
-	configMap, err := harness.clientset.CoreV1().ConfigMaps(kubeSystemNamespace).Get(ctx, "cns-config", metav1.GetOptions{})
+	configMap, err := harness.clientset.CoreV1().ConfigMaps(kubeSystemNamespace).Get(ctx, harness.cfg.ConfigMapName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("getting CNS configmap: %w", err)
 	}

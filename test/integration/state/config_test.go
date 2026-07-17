@@ -31,6 +31,7 @@ func TestLoadFaultConfig(t *testing.T) {
 				envFaultScenario:       string(scenarioEndpointPatch),
 				envFaultOS:             "windows",
 				envFaultCNI:            "stateless",
+				envFaultConfigMap:      "cns-win-config",
 				envFaultRunID:          "build-123",
 				envFaultArtifactDir:    "artifacts",
 				envFaultScaleReplicas:  "32",
@@ -96,6 +97,7 @@ func TestLoadFaultConfig(t *testing.T) {
 				require.Equal(t, int32(32), cfg.ScaleReplicas)
 				require.Equal(t, 60*time.Minute, cfg.Timeout)
 				require.Equal(t, "windows", cfg.OS)
+				require.Equal(t, "cns-win-config", cfg.ConfigMapName)
 			}
 		})
 	}
