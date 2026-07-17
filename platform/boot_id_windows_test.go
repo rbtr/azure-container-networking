@@ -6,49 +6,38 @@
 package platform
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sys/windows"
 )
 
-func TestBootIDNativeQueryBoundary(t *testing.T) {
-	const unsuccessfulNTStatus = 0xc0000001
-
-	expected := windows.GUID{
-		Data1: 0x00112233,
-		Data2: 0x4455,
-		Data3: 0x6677,
-		Data4: [8]byte{0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff},
-	}
+func TestBootIDRegistryQueryBoundary(t *testing.T) {
 	tests := []struct {
-		name       string
-		status     uint32
-		want       string
-		wantErr    string
-		populateID bool
+		name     string
+		id       uint64
+		queryErr error
+		want     string
+		wantErr  string
 	}{
 		{
-			name:       "success",
-			want:       expected.String(),
-			populateID: true,
+			name: "success",
+			id:   9,
+			want: "9",
 		},
 		{
-			name:    "native query failure",
-			status:  unsuccessfulNTStatus,
-			wantErr: "querying Windows boot ID: NTSTATUS 0xc0000001",
+			name:     "registry query failure",
+			queryErr: errors.New("registry unavailable"),
+			wantErr:  "querying Windows boot ID: registry unavailable",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			calls := 0
-			query := func(info *bootEnvironmentInformation) uint32 {
+			query := func() (uint64, error) {
 				calls++
-				if test.populateID {
-					info.BootIdentifier = expected
-				}
-				return test.status
+				return test.id, test.queryErr
 			}
 
 			got, err := bootID(query)

@@ -5,43 +5,37 @@ package platform
 
 import (
 	"fmt"
-	"unsafe"
+	"strconv"
 
-	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 )
 
-const systemBootEnvironmentInformation = 90
+const (
+	windowsBootIDRegistryPath = `SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters`
+	windowsBootIDValueName    = "BootId"
+)
 
-var ntQuerySystemInformation = windows.NewLazySystemDLL("ntdll.dll").NewProc("NtQuerySystemInformation")
-
-type bootEnvironmentInformation struct {
-	BootIdentifier windows.GUID
-	FirmwareType   uint32
-	BootFlags      uint64
-}
-
-type bootEnvironmentQuery func(*bootEnvironmentInformation) uint32
-
-func queryBootEnvironment(info *bootEnvironmentInformation) uint32 {
-	var returnLength uint32
-	status, _, _ := ntQuerySystemInformation.Call(
-		systemBootEnvironmentInformation,
-		uintptr(unsafe.Pointer(info)),
-		unsafe.Sizeof(*info),
-		uintptr(unsafe.Pointer(&returnLength)),
-	)
-	return uint32(status)
-}
+type bootIDQuery func() (uint64, error)
 
 func BootID() (string, error) {
-	return bootID(queryBootEnvironment)
+	return bootID(queryBootIDRegistry)
 }
 
-func bootID(query bootEnvironmentQuery) (string, error) {
-	var info bootEnvironmentInformation
-	status := query(&info)
-	if status != 0 {
-		return "", fmt.Errorf("querying Windows boot ID: NTSTATUS 0x%x", status)
+func queryBootIDRegistry() (uint64, error) {
+	key, err := registry.OpenKey(registry.LOCAL_MACHINE, windowsBootIDRegistryPath, registry.READ)
+	if err != nil {
+		return 0, err
 	}
-	return info.BootIdentifier.String(), nil
+	defer key.Close()
+
+	id, _, err := key.GetIntegerValue(windowsBootIDValueName)
+	return id, err
+}
+
+func bootID(query bootIDQuery) (string, error) {
+	id, err := query()
+	if err != nil {
+		return "", fmt.Errorf("querying Windows boot ID: %w", err)
+	}
+	return strconv.FormatUint(id, 10), nil
 }
