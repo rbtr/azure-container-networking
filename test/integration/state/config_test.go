@@ -46,7 +46,7 @@ func TestLoadFaultConfig(t *testing.T) {
 				envFaultArtifactDir: "artifacts",
 				envValidateBackend:  "bolt",
 			},
-			wantErr: "unsupported migration fault scenario",
+			wantErr: "unsupported scenario",
 		},
 		{
 			name: "unsupported OS and CNI combination",
@@ -57,7 +57,7 @@ func TestLoadFaultConfig(t *testing.T) {
 				envFaultArtifactDir: "artifacts",
 				envValidateBackend:  "bolt",
 			},
-			wantErr: "unsupported migration fault CNI",
+			wantErr: "unsupported CNI",
 		},
 		{
 			name: "non bolt backend",

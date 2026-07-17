@@ -209,7 +209,10 @@ stages:
               expectedAuthority: ${{ parameters.expectedAuthority }}
               expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
               baselineArtifact: state-migration-${{ parameters.name }}-03-same-boot-restart
-              stateRelation: changed
+              ${{ if eq(parameters.enableFaultInjectionHooks, true) }}:
+                stateRelation: exact
+              ${{ else }}:
+                stateRelation: changed
               bootRelation: same
               enableFaultInjectionHooks: ${{ parameters.enableFaultInjectionHooks }}
 
