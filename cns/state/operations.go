@@ -36,6 +36,9 @@ func (s *DB) SetManagedEndpointState(ctx context.Context, enabled bool) error {
 }
 
 func (s *DB) ReplaceDurableState(ctx context.Context, snapshot Snapshot) error {
+	if err := snapshot.Validate(); err != nil {
+		return fmt.Errorf("validating durable state: %w", err)
+	}
 	return s.Update(ctx, func(tx *WriteTx) error {
 		meta, metaErr := tx.Metadata()
 		if metaErr != nil {
@@ -132,6 +135,11 @@ func (s *DB) ReplaceDurableState(ctx context.Context, snapshot Snapshot) error {
 }
 
 func (s *DB) ReplaceManagedEndpoints(ctx context.Context, endpoints map[string]EndpointRecord) error {
+	for containerID, endpoint := range endpoints {
+		if err := validateEndpointRecord(containerID, endpoint, ErrInvalidInput); err != nil {
+			return err
+		}
+	}
 	return s.Update(ctx, func(tx *WriteTx) error {
 		ips, err := tx.IPs()
 		if err != nil {
@@ -179,72 +187,55 @@ func (s *DB) ApplyBoot(ctx context.Context, bootID string, policy BootPolicy) (b
 		return false, fmt.Errorf("%w: boot ID is empty", ErrInvalidInput)
 	}
 
-	var currentBootID string
-	if err := s.View(ctx, func(tx *ReadTx) error {
+	return s.update(ctx, func(tx *WriteTx) (bool, error) {
 		meta, err := tx.Metadata()
 		if err != nil {
-			return err
-		}
-		currentBootID = meta.BootID
-		return nil
-	}); err != nil {
-		return false, err
-	}
-	if currentBootID == bootID {
-		return false, nil
-	}
-
-	changed := false
-	err := s.Update(ctx, func(tx *WriteTx) error {
-		meta, err := tx.Metadata()
-		if err != nil {
-			return err
+			return false, err
 		}
 		if meta.BootID == bootID {
-			return nil
+			return false, nil
 		}
 
-		changed = true
 		meta.BootID = bootID
 		if err := tx.PutMetadata(meta); err != nil {
-			return err
+			return false, err
 		}
 		if err := tx.ClearAssignments(); err != nil {
-			return err
+			return false, err
 		}
 		if err := tx.ClearIPOwners(); err != nil {
-			return err
+			return false, err
 		}
 		if err := tx.ClearDeleteIntents(); err != nil {
-			return err
+			return false, err
 		}
 		if policy.ClearEndpoints {
 			if err := tx.ClearEndpoints(); err != nil {
-				return err
+				return false, err
 			}
 		} else {
 			ips, err := tx.IPs()
 			if err != nil {
-				return err
+				return false, err
 			}
 			endpoints, err := tx.Endpoints()
 			if err != nil {
-				return err
+				return false, err
 			}
 			next := NewSnapshot()
 			next.IPs = ips
 			next.Endpoints = endpoints
 			if err := addAssignmentsFromEndpoints(&next); err != nil {
-				return fmt.Errorf("rebuilding boot assignments from retained endpoints: %w", err)
+				return false, fmt.Errorf("rebuilding boot assignments from retained endpoints: %w", err)
 			}
 			for _, assignment := range next.Assignments {
 				if err := tx.PutAssignment(assignment); err != nil {
-					return err
+					return false, err
 				}
 			}
 			for ipID, podKey := range next.IPOwners {
 				if err := tx.PutIPOwner(ipID, podKey); err != nil {
-					return err
+					return false, err
 				}
 			}
 		}
@@ -252,20 +243,19 @@ func (s *DB) ApplyBoot(ctx context.Context, bootID string, policy BootPolicy) (b
 		if policy.ResetNetworkContainerReadiness {
 			records, err := tx.NetworkContainers()
 			if err != nil {
-				return err
+				return false, err
 			}
 			for id := range records {
 				record := records[id]
 				record.HostVersion = "-1"
 				record.VFPUpdateComplete = false
 				if err := tx.PutNetworkContainer(record); err != nil {
-					return fmt.Errorf("resetting NC %q readiness: %w", id, err)
+					return false, fmt.Errorf("resetting NC %q readiness: %w", id, err)
 				}
 			}
 		}
-		return nil
+		return true, nil
 	})
-	return changed, err
 }
 
 func (s *DB) ApplyNetworkContainer(
@@ -283,16 +273,22 @@ func (s *DB) ApplyNetworkContainer(
 		record.VFPUpdateComplete,
 		record.Request,
 	)
+	if err := validateNetworkContainerRecord(record.ID, record, ErrInvalidInput); err != nil {
+		return err
+	}
 
 	for ipID, ip := range ips {
-		if ipID == "" || ip.ID != ipID {
+		if ipID == "" || ip.ID == "" {
+			return fmt.Errorf("%w: IP ID is empty", ErrInvalidInput)
+		}
+		if ip.ID != ipID {
 			return fmt.Errorf("%w: IP key %q does not match record ID %q", ErrInconsistentState, ipID, ip.ID)
 		}
 		if ip.NCID != record.ID {
 			return fmt.Errorf("%w: IP %q belongs to NC %q, expected %q", ErrInconsistentState, ipID, ip.NCID, record.ID)
 		}
 		if _, err := netip.ParseAddr(ip.IPAddress); err != nil {
-			return fmt.Errorf("cns state: parsing IP %q address %q: %w", ipID, ip.IPAddress, err)
+			return fmt.Errorf("%w: parsing IP %q address %q: %w", ErrInvalidInput, ipID, ip.IPAddress, err)
 		}
 	}
 
@@ -337,6 +333,9 @@ func (s *DB) ApplyNetworkContainer(
 }
 
 func (s *DB) DeleteNetworkContainer(ctx context.Context, ncID string) error {
+	if ncID == "" {
+		return fmt.Errorf("%w: NC ID is empty", ErrInvalidInput)
+	}
 	return s.Update(ctx, func(tx *WriteTx) error {
 		ips, err := tx.IPs()
 		if err != nil {
@@ -376,8 +375,20 @@ func (s *DB) AssignEndpoint(
 	if len(assignment.IPIDs) == 0 {
 		return fmt.Errorf("%w: assignment has no IP IDs", ErrInvalidInput)
 	}
+	if now.IsZero() {
+		return fmt.Errorf("%w: current time is required", ErrInvalidInput)
+	}
+	if intentTTL <= 0 {
+		return fmt.Errorf("%w: delete intent TTL must be positive", ErrInvalidInput)
+	}
+	if err := validateEndpointRecord(assignment.Pod.InfraContainerID, endpoint, ErrInvalidInput); err != nil {
+		return err
+	}
 	seenIPIDs := make(map[string]struct{}, len(assignment.IPIDs))
 	for _, ipID := range assignment.IPIDs {
+		if ipID == "" {
+			return fmt.Errorf("%w: assignment contains an empty IP ID", ErrInvalidInput)
+		}
 		if _, duplicate := seenIPIDs[ipID]; duplicate {
 			return fmt.Errorf("%w: assignment %q contains duplicate IP ID %q", ErrInconsistentState, assignment.Pod.PodKey, ipID)
 		}
@@ -444,11 +455,14 @@ func (s *DB) ReleaseEndpoint(
 	intent DeleteIntent,
 	intentTTL time.Duration,
 ) error {
-	if infraContainerID == "" {
-		return fmt.Errorf("%w: infra container ID is required", ErrInvalidInput)
+	if podKey == "" || infraContainerID == "" {
+		return fmt.Errorf("%w: pod key and infra container ID are required", ErrInvalidInput)
 	}
 	if intent.CreatedAt.IsZero() {
 		return fmt.Errorf("%w: delete intent timestamp is required", ErrInvalidInput)
+	}
+	if intentTTL <= 0 {
+		return fmt.Errorf("%w: delete intent TTL must be positive", ErrInvalidInput)
 	}
 
 	return s.Update(ctx, func(tx *WriteTx) error {
@@ -486,6 +500,9 @@ func (s *DB) ReleaseEndpoint(
 }
 
 func (s *DB) DeleteEndpointRecord(ctx context.Context, infraContainerID string) error {
+	if infraContainerID == "" {
+		return fmt.Errorf("%w: infra container ID is required", ErrInvalidInput)
+	}
 	return s.Update(ctx, func(tx *WriteTx) error {
 		assignments, err := tx.Assignments()
 		if err != nil {
@@ -507,6 +524,18 @@ func (s *DB) PatchEndpoint(
 	now time.Time,
 	intentTTL time.Duration,
 ) error {
+	if infraContainerID == "" {
+		return fmt.Errorf("%w: infra container ID is required", ErrInvalidInput)
+	}
+	if now.IsZero() {
+		return fmt.Errorf("%w: current time is required", ErrInvalidInput)
+	}
+	if intentTTL <= 0 {
+		return fmt.Errorf("%w: delete intent TTL must be positive", ErrInvalidInput)
+	}
+	if err := validateEndpointRecord(infraContainerID, endpoint, ErrInvalidInput); err != nil {
+		return err
+	}
 	return s.Update(ctx, func(tx *WriteTx) error {
 		intent, intentErr := tx.DeleteIntent(infraContainerID)
 		switch {
@@ -524,6 +553,12 @@ func (s *DB) PatchEndpoint(
 }
 
 func (s *DB) PruneDeleteIntents(ctx context.Context, now time.Time, ttl time.Duration) error {
+	if now.IsZero() {
+		return fmt.Errorf("%w: current time is required", ErrInvalidInput)
+	}
+	if ttl <= 0 {
+		return fmt.Errorf("%w: delete intent TTL must be positive", ErrInvalidInput)
+	}
 	return s.Update(ctx, func(tx *WriteTx) error {
 		intents, err := tx.DeleteIntents()
 		if err != nil {

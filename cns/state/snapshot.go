@@ -6,6 +6,7 @@ package state
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/netip"
 )
 
@@ -57,6 +58,12 @@ func (s Snapshot) Validate() error {
 		return fmt.Errorf("%w: database=%d code=%d", ErrSchemaMismatch, s.Metadata.SchemaVersion, SchemaVersion)
 	}
 
+	for ncID := range s.NetworkContainers {
+		if err := validateNetworkContainerRecord(ncID, s.NetworkContainers[ncID], ErrInconsistentState); err != nil {
+			return err
+		}
+	}
+
 	for ipID, ip := range s.IPs {
 		if ip.ID != ipID {
 			return fmt.Errorf("%w: IP key %q does not match record ID %q", ErrInconsistentState, ipID, ip.ID)
@@ -66,6 +73,25 @@ func (s Snapshot) Validate() error {
 		}
 		if _, err := netip.ParseAddr(ip.IPAddress); err != nil {
 			return fmt.Errorf("%w: IP %q has invalid address %q: %w", ErrInconsistentState, ipID, ip.IPAddress, err)
+		}
+	}
+
+	seenEndpointIPs := make(map[string]string)
+	for containerID, endpoint := range s.Endpoints {
+		if err := validateEndpointRecord(containerID, endpoint, ErrInconsistentState); err != nil {
+			return err
+		}
+		for _, ipInfo := range endpoint.IfnameToIPMap {
+			if ipInfo == nil || !ipInfo.NICType.IsInfraOrLegacy() {
+				continue
+			}
+			for _, ipNet := range append(ipInfo.IPv4, ipInfo.IPv6...) {
+				ip := ipNet.IP.String()
+				if previous, exists := seenEndpointIPs[ip]; exists && previous != containerID {
+					return fmt.Errorf("%w: endpoint IP %q owned by %q and %q", ErrInconsistentState, ip, previous, containerID)
+				}
+				seenEndpointIPs[ip] = containerID
+			}
 		}
 	}
 
@@ -112,22 +138,122 @@ func (s Snapshot) Validate() error {
 		}
 	}
 
-	seenEndpointIPs := make(map[string]string)
-	for containerID, endpoint := range s.Endpoints {
-		for _, ipInfo := range endpoint.IfnameToIPMap {
-			if ipInfo == nil || !ipInfo.NICType.IsInfraOrLegacy() {
-				continue
+	return nil
+}
+
+func validateNetworkContainerRecord(ncID string, record NetworkContainerRecord, sentinel error) error {
+	if ncID == "" || record.ID == "" {
+		return fmt.Errorf("%w: empty NC ID", sentinel)
+	}
+	if record.ID != ncID {
+		return fmt.Errorf("%w: NC key %q does not match record ID %q", sentinel, ncID, record.ID)
+	}
+
+	prefixes := []struct {
+		name    string
+		address string
+		bits    uint8
+	}{
+		{
+			name:    "local IPv4 subnet",
+			address: record.Request.LocalIPConfiguration.IPSubnet.IPAddress,
+			bits:    record.Request.LocalIPConfiguration.IPSubnet.PrefixLength,
+		},
+		{
+			name:    "local IPv6 subnet",
+			address: record.Request.LocalIPConfiguration.IPSubnetV6.IPAddress,
+			bits:    record.Request.LocalIPConfiguration.IPSubnetV6.PrefixLength,
+		},
+		{
+			name:    "IPv4 subnet",
+			address: record.Request.IPConfiguration.IPSubnet.IPAddress,
+			bits:    record.Request.IPConfiguration.IPSubnet.PrefixLength,
+		},
+		{
+			name:    "IPv6 subnet",
+			address: record.Request.IPConfiguration.IPSubnetV6.IPAddress,
+			bits:    record.Request.IPConfiguration.IPSubnetV6.PrefixLength,
+		},
+		{
+			name:    "secondary IPv6 subnet",
+			address: record.Request.IPv6Configuration.IPSubnet.IPAddress,
+			bits:    record.Request.IPv6Configuration.IPSubnet.PrefixLength,
+		},
+		{
+			name:    "secondary IPv6 subnet v6",
+			address: record.Request.IPv6Configuration.IPSubnetV6.IPAddress,
+			bits:    record.Request.IPv6Configuration.IPSubnetV6.PrefixLength,
+		},
+	}
+	for _, prefix := range prefixes {
+		if err := validatePrefix(prefix.address, prefix.bits); err != nil {
+			return fmt.Errorf("%w: %s has invalid prefix: %w", sentinel, prefix.name, err)
+		}
+	}
+	for i, prefix := range record.Request.CnetAddressSpace {
+		if err := validatePrefix(prefix.IPAddress, prefix.PrefixLength); err != nil {
+			return fmt.Errorf("%w: cnet address space %d has invalid prefix: %w", sentinel, i, err)
+		}
+	}
+	return nil
+}
+
+func validatePrefix(address string, bits uint8) error {
+	if address == "" && bits == 0 {
+		return nil
+	}
+	if _, err := netip.ParsePrefix(fmt.Sprintf("%s/%d", address, bits)); err != nil {
+		return fmt.Errorf("parse prefix: %w", err)
+	}
+	return nil
+}
+
+func validateEndpointRecord(containerID string, endpoint EndpointRecord, sentinel error) error {
+	if containerID == "" {
+		return fmt.Errorf("%w: empty endpoint ID", sentinel)
+	}
+	for ifName, ipInfo := range endpoint.IfnameToIPMap {
+		if ipInfo == nil {
+			continue
+		}
+		for _, prefix := range ipInfo.IPv4 {
+			if err := validateEndpointPrefix(prefix, true, sentinel); err != nil {
+				return fmt.Errorf("endpoint %q interface %q: %w", containerID, ifName, err)
 			}
-			for _, ipNet := range append(ipInfo.IPv4, ipInfo.IPv6...) {
-				ip := ipNet.IP.String()
-				if previous, exists := seenEndpointIPs[ip]; exists && previous != containerID {
-					return fmt.Errorf("%w: endpoint IP %q owned by %q and %q", ErrInconsistentState, ip, previous, containerID)
-				}
-				seenEndpointIPs[ip] = containerID
+		}
+		for _, prefix := range ipInfo.IPv6 {
+			if err := validateEndpointPrefix(prefix, false, sentinel); err != nil {
+				return fmt.Errorf("endpoint %q interface %q: %w", containerID, ifName, err)
 			}
 		}
 	}
+	return nil
+}
 
+func validateEndpointPrefix(prefix net.IPNet, ipv4 bool, sentinel error) error {
+	if prefix.IP.To16() == nil {
+		if ipv4 {
+			return fmt.Errorf("%w: invalid IPv4 address", sentinel)
+		}
+		return fmt.Errorf("%w: invalid IPv6 address", sentinel)
+	}
+	if ipv4 && prefix.IP.To4() == nil {
+		return fmt.Errorf("%w: IPv6 address in IPv4 collection", sentinel)
+	}
+	if !ipv4 && prefix.IP.To4() != nil {
+		return fmt.Errorf("%w: IPv4 address in IPv6 collection", sentinel)
+	}
+
+	_, bits := prefix.Mask.Size()
+	wantBits := net.IPv6len * 8
+	family := "IPv6"
+	if ipv4 {
+		wantBits = net.IPv4len * 8
+		family = "IPv4"
+	}
+	if bits != wantBits {
+		return fmt.Errorf("%w: invalid %s prefix", sentinel, family)
+	}
 	return nil
 }
 

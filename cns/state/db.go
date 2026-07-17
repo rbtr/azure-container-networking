@@ -154,8 +154,18 @@ func (s *DB) View(ctx context.Context, fn func(*ReadTx) error) error {
 }
 
 func (s *DB) Update(ctx context.Context, fn func(*WriteTx) error) error {
+	_, err := s.update(ctx, func(tx *WriteTx) (bool, error) {
+		if err := fn(tx); err != nil {
+			return false, err
+		}
+		return true, nil
+	})
+	return err
+}
+
+func (s *DB) update(ctx context.Context, fn func(*WriteTx) (bool, error)) (bool, error) {
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("updating CNS state: %w", err)
+		return false, fmt.Errorf("updating CNS state: %w", err)
 	}
 	select {
 	case s.writeGate <- struct{}{}:
@@ -163,15 +173,21 @@ func (s *DB) Update(ctx context.Context, fn func(*WriteTx) error) error {
 			<-s.writeGate
 		}()
 	case <-ctx.Done():
-		return fmt.Errorf("updating CNS state: %w", ctx.Err())
+		return false, fmt.Errorf("updating CNS state: %w", ctx.Err())
 	}
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("updating CNS state: %w", err)
+		return false, fmt.Errorf("updating CNS state: %w", err)
 	}
+	changed := false
 	if err := s.db.Update(func(tx *bolt.Tx) error {
 		writeTx := &WriteTx{ReadTx: ReadTx{tx: tx}}
-		if err := fn(writeTx); err != nil {
+		var err error
+		changed, err = fn(writeTx)
+		if err != nil {
 			return err
+		}
+		if !changed {
+			return nil
 		}
 
 		meta := tx.Bucket(bucketMetadata)
@@ -181,9 +197,9 @@ func (s *DB) Update(ctx context.Context, fn func(*WriteTx) error) error {
 		}
 		return nil
 	}); err != nil {
-		return fmt.Errorf("updating CNS state: %w", err)
+		return false, fmt.Errorf("updating CNS state: %w", err)
 	}
-	return nil
+	return changed, nil
 }
 
 func uint32Bytes(value uint32) []byte {

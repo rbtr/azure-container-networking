@@ -30,7 +30,7 @@ func (r *ReadTx) Metadata() (Metadata, error) {
 	if data := metaBucket.Get(metaKeyService); data != nil {
 		var serviceMeta Metadata
 		if err := json.Unmarshal(data, &serviceMeta); err != nil {
-			return Metadata{}, fmt.Errorf("decoding service metadata: %w", err)
+			return Metadata{}, fmt.Errorf("decoding %q from bucket %q: %w", metaKeyService, bucketMetadata, err)
 		}
 		meta.OrchestratorType = serviceMeta.OrchestratorType
 		meta.NodeID = serviceMeta.NodeID

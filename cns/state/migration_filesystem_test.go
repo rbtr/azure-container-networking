@@ -25,6 +25,7 @@ const (
 	rollbackTestNCID      = "nc-rollback"
 	rollbackTestIPID      = "ip-rollback"
 	rollbackTestIPAddress = "10.0.0.4"
+	rollbackTestIfName    = "eth0"
 )
 
 var errInjectedRollbackFileSystem = errors.New("injected rollback filesystem failure")
@@ -442,7 +443,7 @@ func TestRollbackJSONMutationIsReimportedIntoBolt(t *testing.T) {
 				PodName:      "pod-json",
 				PodNamespace: "default",
 				IfnameToIPMap: map[string]*legacyIPInfo{
-					"eth0": {
+					rollbackTestIfName: {
 						IPv4: []net.IPNet{{
 							IP:   net.ParseIP(jsonIPAddress),
 							Mask: net.CIDRMask(24, 32),
@@ -531,7 +532,7 @@ func seedRollbackTestDB(ctx context.Context, t *testing.T, db *DB) {
 		PodName:      "pod-rollback",
 		PodNamespace: "default",
 		IfnameToIPMap: map[string]*IPInfoRecord{
-			"eth0": {
+			rollbackTestIfName: {
 				IPv4: []net.IPNet{{
 					IP:   net.ParseIP(rollbackTestIPAddress),
 					Mask: net.CIDRMask(24, 32),
