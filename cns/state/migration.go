@@ -26,6 +26,12 @@ const (
 	defaultDeleteIntentMigrationTTL = 24 * time.Hour
 )
 
+var (
+	errLegacyMigrationAlreadyComplete = errors.New("legacy migration already complete")
+	errLegacyStateNotObject           = errors.New("legacy state must be a JSON object")
+	errMalformedLegacyNCList          = errors.New("malformed legacy network container list")
+)
+
 type ImportOptions struct {
 	CNSJSONPath         string
 	EndpointJSONPath    string
@@ -50,11 +56,25 @@ type legacyCNSState struct {
 
 type legacyNCList string
 
-func (l legacyNCList) IDs() []string {
+func (l legacyNCList) IDs() ([]string, error) {
 	if l == "" {
-		return nil
+		return nil, nil
 	}
-	return strings.Split(string(l), ",")
+	ids := strings.Split(string(l), ",")
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			return nil, fmt.Errorf("%w: empty network container ID", errMalformedLegacyNCList)
+		}
+		if strings.TrimSpace(id) != id {
+			return nil, fmt.Errorf("%w: network container ID %q has surrounding whitespace", errMalformedLegacyNCList, id)
+		}
+		if _, exists := seen[id]; exists {
+			return nil, fmt.Errorf("%w: duplicate network container ID %q", errMalformedLegacyNCList, id)
+		}
+		seen[id] = struct{}{}
+	}
+	return ids, nil
 }
 
 type legacyContainerStatus struct {
@@ -129,13 +149,14 @@ func (s *DB) ImportLegacy(ctx context.Context, opts ImportOptions) error {
 			return fmt.Errorf("reading migration metadata: %w", metaErr)
 		}
 		if tx.MigrationComplete() && meta.Authority == AuthorityBolt {
-			return nil
+			return errLegacyMigrationAlreadyComplete
 		}
-		if meta.Authority == AuthorityJSON {
+		switch meta.Authority {
+		case AuthorityJSON:
 			if clearErr := tx.ClearState(); clearErr != nil {
 				return clearErr
 			}
-		} else {
+		case AuthorityBolt:
 			empty, emptyErr := txStateEmpty(&tx.ReadTx)
 			if emptyErr != nil {
 				return emptyErr
@@ -143,6 +164,8 @@ func (s *DB) ImportLegacy(ctx context.Context, opts ImportOptions) error {
 			if !empty {
 				return fmt.Errorf("%w: refusing to merge legacy JSON into non-empty Bolt state", ErrInconsistentState)
 			}
+		default:
+			return fmt.Errorf("%w: unrecognized state authority %q", ErrInconsistentState, meta.Authority)
 		}
 
 		snapshot.Metadata.Authority = AuthorityBolt
@@ -155,6 +178,9 @@ func (s *DB) ImportLegacy(ctx context.Context, opts ImportOptions) error {
 		}
 		return tx.SetMigrationComplete()
 	}); updateErr != nil {
+		if errors.Is(updateErr, errLegacyMigrationAlreadyComplete) {
+			return nil
+		}
 		return fmt.Errorf("importing legacy state: %w", updateErr)
 	}
 	return nil
@@ -172,11 +198,14 @@ func readLegacySnapshot(opts ImportOptions) (Snapshot, error) {
 	}
 	if exists {
 		if raw, ok := cnsEnvelope[legacyCNSStoreKey]; ok {
-			var legacy legacyCNSState
+			var legacy *legacyCNSState
 			if decodeErr := json.Unmarshal(raw, &legacy); decodeErr != nil { //nolint:musttag // Legacy wire type preserves existing field names.
 				return Snapshot{}, fmt.Errorf("decoding legacy CNS state: %w", decodeErr)
 			}
-			if addErr := addLegacyCNSState(&snapshot, legacy); addErr != nil {
+			if legacy == nil {
+				return Snapshot{}, fmt.Errorf("decoding legacy CNS state: %w", errLegacyStateNotObject)
+			}
+			if addErr := addLegacyCNSState(&snapshot, *legacy); addErr != nil {
 				return Snapshot{}, addErr
 			}
 		}
@@ -188,18 +217,24 @@ func readLegacySnapshot(opts ImportOptions) (Snapshot, error) {
 	}
 	if endpointExists {
 		if raw, ok := endpointEnvelope[legacyEndpointStoreKey]; ok {
-			var endpoints map[string]*legacyEndpointInfo
+			var endpoints *map[string]*legacyEndpointInfo
 			if err := json.Unmarshal(raw, &endpoints); err != nil {
 				return Snapshot{}, fmt.Errorf("decoding legacy endpoint state: %w", err)
 			}
-			addLegacyEndpoints(&snapshot, endpoints)
+			if endpoints == nil {
+				return Snapshot{}, fmt.Errorf("decoding legacy endpoint state: %w", errLegacyStateNotObject)
+			}
+			addLegacyEndpoints(&snapshot, *endpoints)
 		}
 		if raw, ok := endpointEnvelope[legacyDeleteIntentStoreKey]; ok {
-			var intents map[string]legacyDeleteIntent
+			var intents *map[string]legacyDeleteIntent
 			if err := json.Unmarshal(raw, &intents); err != nil {
 				return Snapshot{}, fmt.Errorf("decoding legacy endpoint delete intents: %w", err)
 			}
-			for containerID, intent := range intents {
+			if intents == nil {
+				return Snapshot{}, fmt.Errorf("decoding legacy endpoint delete intents: %w", errLegacyStateNotObject)
+			}
+			for containerID, intent := range *intents {
 				if deleteIntentExpired(DeleteIntent(intent), opts.Now, opts.DeleteIntentTTL) {
 					continue
 				}
@@ -225,7 +260,11 @@ func addLegacyCNSState(snapshot *Snapshot, legacy legacyCNSState) error {
 	snapshot.Metadata.TimeStamp = legacy.TimeStamp
 
 	for key, list := range legacy.ContainerIDByOrchestratorContext {
-		snapshot.OrchestratorContexts[key] = list.IDs()
+		ids, err := list.IDs()
+		if err != nil {
+			return fmt.Errorf("%w: orchestrator context %q: %w", ErrInconsistentState, key, err)
+		}
+		snapshot.OrchestratorContexts[key] = ids
 	}
 	for mac, pnpID := range legacy.PnpIDByMacAddress {
 		snapshot.PnPIDByMAC[mac] = pnpID
@@ -367,6 +406,9 @@ func readLegacyEnvelope(path string) (LegacyEnvelope, bool, error) {
 	if err := json.Unmarshal(data, &envelope); err != nil {
 		return nil, false, fmt.Errorf("decoding legacy state envelope %q: %w", path, err)
 	}
+	if envelope == nil {
+		return nil, false, fmt.Errorf("decoding legacy state envelope %q: %w", path, errLegacyStateNotObject)
+	}
 	return envelope, true, nil
 }
 
@@ -438,11 +480,27 @@ func txStateEmpty(tx *ReadTx) (bool, error) {
 			return len(records), err
 		},
 		func() (int, error) {
+			records, err := tx.OrchestratorContexts()
+			return len(records), err
+		},
+		func() (int, error) {
+			records, err := tx.PnPIDByMAC()
+			return len(records), err
+		},
+		func() (int, error) {
 			records, err := tx.Endpoints()
 			return len(records), err
 		},
 		func() (int, error) {
 			records, err := tx.Assignments()
+			return len(records), err
+		},
+		func() (int, error) {
+			records, err := tx.IPOwners()
+			return len(records), err
+		},
+		func() (int, error) {
+			records, err := tx.DeleteIntents()
 			return len(records), err
 		},
 	}

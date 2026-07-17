@@ -68,7 +68,8 @@ type Options struct {
 }
 
 type DB struct {
-	db *bolt.DB
+	db        *bolt.DB
+	writeGate chan struct{}
 }
 
 func Open(path string, opts Options) (*DB, error) {
@@ -86,7 +87,10 @@ func Open(path string, opts Options) (*DB, error) {
 		return nil, fmt.Errorf("opening CNS state database %q: %w", path, err)
 	}
 
-	store := &DB{db: db}
+	store := &DB{
+		db:        db,
+		writeGate: make(chan struct{}, 1),
+	}
 	if !opts.ReadOnly {
 		if err := store.initialize(); err != nil {
 			_ = db.Close()
@@ -150,6 +154,17 @@ func (s *DB) View(ctx context.Context, fn func(*ReadTx) error) error {
 }
 
 func (s *DB) Update(ctx context.Context, fn func(*WriteTx) error) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("updating CNS state: %w", err)
+	}
+	select {
+	case s.writeGate <- struct{}{}:
+		defer func() {
+			<-s.writeGate
+		}()
+	case <-ctx.Done():
+		return fmt.Errorf("updating CNS state: %w", ctx.Err())
+	}
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("updating CNS state: %w", err)
 	}
