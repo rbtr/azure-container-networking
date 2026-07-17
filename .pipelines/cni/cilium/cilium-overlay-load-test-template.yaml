@@ -14,6 +14,7 @@ parameters:
   upgradeScenario: ""
   ciliumVersionOverwrite: false
   stateValidationMode: ""
+  stateBackend: "json"
 
 # Condition confirms that:
 # Previous job has reported Succeeded. Previous job is currently setup which controls variable assignment and we are dependent on its success.
@@ -241,6 +242,7 @@ stages:
             parameters:
               clusterName: ${{ parameters.clusterName }}-$(commitID)
               cni: ${{ parameters.cni }}
+              stateBackend: ${{ parameters.stateBackend }}
       - job: restart_nodes
         condition: and( and( not(canceled()), not(failed()) ), or( contains(variables.CONTROL_SCENARIO, 'restartNode') , contains(variables.CONTROL_SCENARIO, 'all') ) )
         displayName: "Restart Test"
@@ -259,6 +261,7 @@ stages:
               clusterName: ${{ parameters.clusterName }}-$(commitID)
               restartCase: "true"
               cni: ${{ parameters.cni }}
+              stateBackend: ${{ parameters.stateBackend }}
       - job: restart_cns
         condition: and( and( not(canceled()), not(failed()) ), or( contains(variables.CONTROL_SCENARIO, 'restartCNS') , contains(variables.CONTROL_SCENARIO, 'all') ) )
         displayName: "Restart and Validate CNS"

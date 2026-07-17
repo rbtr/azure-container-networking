@@ -65,17 +65,26 @@ type ValidationSummary struct {
 }
 
 type ValidationCheckEntry struct {
-	CheckName      string   `json:"checkName"`
-	NodeName       string   `json:"nodeName"`
-	ExpectedCount  int      `json:"expectedCount"`
-	ActualCount    int      `json:"actualCount"`
-	Attempts       int      `json:"attempts"`
-	DurationMS     int64    `json:"durationMS"`
-	Converged      bool     `json:"converged"`
-	MissingIPs     []string `json:"missingIPs,omitempty"`
-	UnexpectedIPs  []string `json:"unexpectedIPs,omitempty"`
-	DuplicateIPs   []string `json:"duplicateIPs,omitempty"`
-	ValidationPass bool     `json:"validationPass"`
+	CheckName       string   `json:"checkName"`
+	NodeName        string   `json:"nodeName"`
+	ExpectedCount   int      `json:"expectedCount"`
+	ActualCount     int      `json:"actualCount"`
+	Attempts        int      `json:"attempts"`
+	DurationMS      int64    `json:"durationMS"`
+	Converged       bool     `json:"converged"`
+	MissingIPs      []string `json:"missingIPs,omitempty"`
+	UnexpectedIPs   []string `json:"unexpectedIPs,omitempty"`
+	DuplicateIPs    []string `json:"duplicateIPs,omitempty"`
+	ValidationPass  bool     `json:"validationPass"`
+	StateBackend    string   `json:"stateBackend,omitempty"`
+	Authority       string   `json:"authority,omitempty"`
+	SchemaVersion   uint32   `json:"schemaVersion,omitempty"`
+	Generation      uint64   `json:"generation,omitempty"`
+	BootID          string   `json:"bootID,omitempty"`
+	EndpointCount   int      `json:"endpointCount,omitempty"`
+	AssignmentCount int      `json:"assignmentCount,omitempty"`
+	OwnerCount      int      `json:"ownerCount,omitempty"`
+	TombstoneCount  int      `json:"tombstoneCount,omitempty"`
 }
 
 type check struct {
@@ -85,11 +94,14 @@ type check struct {
 	podNamespace     string
 	containerName    string
 	cmd              []string
+	cnsManagedState  bool
+	metadataOnly     bool
+	persistentState  bool
 }
 
-func CreateValidator(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, namespace, cni string, restartCase bool, os string) (*Validator, error) {
+func CreateValidator(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, namespace, cni string, restartCase bool, osName string) (*Validator, error) {
 	// deploy privileged pod
-	privilegedDaemonSet := acnk8s.MustParseDaemonSet(privilegedDaemonSetPathMap[os])
+	privilegedDaemonSet := acnk8s.MustParseDaemonSet(privilegedDaemonSetPathMap[osName])
 	daemonsetClient := clientset.AppsV1().DaemonSets(privilegedNamespace)
 	acnk8s.MustCreateDaemonset(ctx, daemonsetClient, privilegedDaemonSet)
 
@@ -99,7 +111,7 @@ func CreateValidator(ctx context.Context, clientset *kubernetes.Clientset, confi
 	}
 
 	var checks []check
-	switch os {
+	switch osName {
 	case "windows":
 		checks = windowsChecksMap[cni]
 		err := acnk8s.RestartKubeProxyService(ctx, clientset, privilegedNamespace, privilegedLabelSelector, config)
@@ -109,7 +121,11 @@ func CreateValidator(ctx context.Context, clientset *kubernetes.Clientset, confi
 	case "linux":
 		checks = linuxChecksMap[cni]
 	default:
-		return nil, errors.Errorf("unsupported os: %s", os)
+		return nil, errors.Errorf("unsupported os: %s", osName)
+	}
+	checks, err := configureStateChecks(checks, osName, os.Getenv("VALIDATE_STATE_BACKEND"))
+	if err != nil {
+		return nil, err
 	}
 
 	return &Validator{
@@ -119,10 +135,10 @@ func CreateValidator(ctx context.Context, clientset *kubernetes.Clientset, confi
 		cni:         cni,
 		restartCase: restartCase,
 		checks:      checks,
-		os:          os,
+		os:          osName,
 		summary: ValidationSummary{
 			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-			OS:          os,
+			OS:          osName,
 			CNI:         cni,
 			Namespace:   namespace,
 			RestartCase: restartCase,
@@ -152,7 +168,7 @@ func (v *Validator) Validate(ctx context.Context) error {
 
 func (v *Validator) ValidateStateFile(ctx context.Context) error {
 	for _, check := range v.checks {
-		err := v.validateIPs(ctx, check.stateFileIPs, check.cmd, check.name, check.podNamespace, check.podLabelSelector, check.containerName)
+		err := v.validateIPs(ctx, check)
 		if err != nil {
 			return err
 		}
@@ -160,7 +176,12 @@ func (v *Validator) ValidateStateFile(ctx context.Context) error {
 	return nil
 }
 
-func (v *Validator) validateIPs(ctx context.Context, stateFileIps stateFileIpsFunc, cmd []string, checkType, namespace, labelSelector, containerName string) error {
+func (v *Validator) validateIPs(ctx context.Context, stateCheck check) error {
+	checkType := stateCheck.name
+	namespace := stateCheck.podNamespace
+	labelSelector := stateCheck.podLabelSelector
+	containerName := stateCheck.containerName
+	cmd := stateCheck.cmd
 	log.Printf("Validating %s state file for %s on %s", checkType, v.cni, v.os)
 	nodes, err := acnk8s.GetNodeListByLabelSelector(ctx, v.clientset, nodeSelectorMap[v.os])
 	if err != nil {
@@ -176,6 +197,7 @@ func (v *Validator) validateIPs(ctx context.Context, stateFileIps stateFileIpsFu
 		attempts := 0
 		converged := false
 		var comparison ipComparisonResult
+		var persistentDetails persistentStateDetails
 
 		for attempt := 1; attempt <= maxAttempts; attempt++ {
 			attempts = attempt
@@ -195,9 +217,20 @@ func (v *Validator) validateIPs(ctx context.Context, stateFileIps stateFileIpsFu
 				return errors.Wrapf(err, "failed to exec into privileged pod - %s", podName)
 			}
 
-			filePodIps, err := stateFileIps(result)
+			filePodIps, err := stateCheck.stateFileIPs(result)
 			if err != nil {
 				return errors.Wrapf(err, "failed to get pod ips from state file on node %v", nodeName)
+			}
+			if stateCheck.persistentState {
+				persistentDetails, err = inspectPersistentState(result)
+				if err != nil {
+					return errors.Wrapf(err, "failed to validate persistent state on node %v", nodeName)
+				}
+			}
+			if stateCheck.metadataOnly {
+				comparison = ipComparisonResult{}
+				converged = true
+				break
 			}
 			podIps := getPodIPsWithoutNodeIP(ctx, v.clientset, nodes.Items[index])
 			// include IPs from Cilium internal endpoints (reserved:ingress) that are not real K8s pods.
@@ -217,17 +250,26 @@ func (v *Validator) validateIPs(ctx context.Context, stateFileIps stateFileIpsFu
 		}
 
 		v.summary.Checks = append(v.summary.Checks, ValidationCheckEntry{
-			CheckName:      checkType,
-			NodeName:       nodeName,
-			ExpectedCount:  comparison.ExpectedCount,
-			ActualCount:    comparison.ActualCount,
-			Attempts:       attempts,
-			DurationMS:     time.Since(started).Milliseconds(),
-			Converged:      converged,
-			MissingIPs:     comparison.MissingIPs,
-			UnexpectedIPs:  comparison.UnexpectedIPs,
-			DuplicateIPs:   comparison.DuplicateIPs,
-			ValidationPass: converged && !comparison.HasMismatch(),
+			CheckName:       checkType,
+			NodeName:        nodeName,
+			ExpectedCount:   comparison.ExpectedCount,
+			ActualCount:     comparison.ActualCount,
+			Attempts:        attempts,
+			DurationMS:      time.Since(started).Milliseconds(),
+			Converged:       converged,
+			MissingIPs:      comparison.MissingIPs,
+			UnexpectedIPs:   comparison.UnexpectedIPs,
+			DuplicateIPs:    comparison.DuplicateIPs,
+			ValidationPass:  converged && !comparison.HasMismatch(),
+			StateBackend:    persistentDetails.Backend,
+			Authority:       persistentDetails.Authority,
+			SchemaVersion:   persistentDetails.SchemaVersion,
+			Generation:      persistentDetails.Generation,
+			BootID:          persistentDetails.BootID,
+			EndpointCount:   persistentDetails.EndpointCount,
+			AssignmentCount: persistentDetails.AssignmentCount,
+			OwnerCount:      persistentDetails.OwnerCount,
+			TombstoneCount:  persistentDetails.TombstoneCount,
 		})
 
 		if !converged || comparison.HasMismatch() {

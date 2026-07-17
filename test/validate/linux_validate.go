@@ -18,13 +18,8 @@ const (
 )
 
 var (
-	restartNetworkCmd      = []string{"bash", "-c", "systemctl restart systemd-networkd"}
-	cnsManagedStateFileCmd = []string{
-		"bash",
-		"-c",
-		"if output=$(curl -sf localhost:10090/debug/persistentstate -d '{}'); then " +
-			"printf '%s' \"$output\"; else cat /var/run/azure-cns/azure-endpoints.json; fi",
-	}
+	restartNetworkCmd           = []string{"bash", "-c", "systemctl restart systemd-networkd"}
+	cnsManagedJSONStateFileCmd  = []string{"bash", "-c", "cat /var/run/azure-cns/azure-endpoints.json"}
 	azureVnetStateFileCmd       = []string{"bash", "-c", "cat /var/run/azure-vnet.json"}
 	azureVnetIpamStateCmd       = []string{"bash", "-c", "cat /var/run/azure-vnet-ipam.json"}
 	ciliumStateFileCmd          = []string{"cilium", "endpoint", "list", "-o", "json"}
@@ -41,7 +36,8 @@ var linuxChecksMap = map[string][]check{
 			podLabelSelector: validatorPod,
 			podNamespace:     privilegedNamespace,
 			containerName:    "debug",
-			cmd:              cnsManagedStateFileCmd,
+			cmd:              cnsManagedJSONStateFileCmd,
+			cnsManagedState:  true,
 		}, // cns configmap "ManageEndpointState": true, | Endpoints managed in CNS State File
 		{
 			name:             "cilium",
@@ -117,7 +113,8 @@ var linuxChecksMap = map[string][]check{
 			podLabelSelector: validatorPod,
 			podNamespace:     privilegedNamespace,
 			containerName:    "debug",
-			cmd:              cnsManagedStateFileCmd,
+			cmd:              cnsManagedJSONStateFileCmd,
+			cnsManagedState:  true,
 		}, // cns configmap "ManageEndpointState": true, | Endpoints managed in CNS State File
 		{
 			name:             "cilium",

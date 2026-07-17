@@ -3,6 +3,7 @@ parameters:
   os: "linux"
   restartCase: "false"
   cni: "cilium"
+  stateBackend: "json"
   convergenceAttempts: "5"
   convergenceIntervalSeconds: "10"
   baselineSummaryPath: ""
@@ -24,6 +25,7 @@ steps:
         summaryDir="$(Build.SourcesDirectory)/test/integration/logs/validate"
         summaryPath="$summaryDir/${{ parameters.summaryFileName }}"
         VALIDATE_SUMMARY_PATH="$summaryPath" \
+        VALIDATE_STATE_BACKEND=${{ parameters.stateBackend }} \
         VALIDATE_CONVERGENCE_ATTEMPTS=${{ parameters.convergenceAttempts }} \
         VALIDATE_CONVERGENCE_INTERVAL_SECONDS=${{ parameters.convergenceIntervalSeconds }} \
         make test-validate-state OS_TYPE=${{ parameters.os }} RESTART_CASE=${{ parameters.restartCase }} CNI_TYPE=${{ parameters.cni }}

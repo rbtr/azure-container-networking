@@ -77,3 +77,32 @@ func TestCompareSummariesAllowsGrowth(t *testing.T) {
 
 	assert.NoError(t, compareSummaries(baseline, candidate))
 }
+
+func TestCompareSummariesRejectsPersistentStateRegression(t *testing.T) {
+	baseline := validationSummary{Checks: []validationCheckEntry{{
+		CheckName:       testCheckName,
+		NodeName:        testNodeName,
+		ValidationPass:  true,
+		StateBackend:    "bolt",
+		Authority:       "bolt",
+		SchemaVersion:   1,
+		Generation:      10,
+		EndpointCount:   3,
+		AssignmentCount: 3,
+		OwnerCount:      3,
+	}}}
+	candidate := validationSummary{Checks: []validationCheckEntry{{
+		CheckName:       testCheckName,
+		NodeName:        testNodeName,
+		ValidationPass:  true,
+		StateBackend:    "bolt",
+		Authority:       "bolt",
+		SchemaVersion:   1,
+		Generation:      9,
+		EndpointCount:   2,
+		AssignmentCount: 2,
+		OwnerCount:      2,
+	}}}
+
+	assert.Error(t, compareSummaries(baseline, candidate))
+}

@@ -14,6 +14,7 @@ parameters:
   osSkuWin: Windows2022
   upgradeScenario: ""
   stateValidationMode: ""
+  stateBackend: "json"
 
 # CNIv2
 # + Should be able to scale up/down the pods successfully certain number of times.
@@ -273,6 +274,7 @@ stages:
               clusterName: ${{ parameters.clusterName }}-$(commitID)
               os: ${{ parameters.os }}
               cni: cniv2
+              stateBackend: ${{ parameters.stateBackend }}
               summaryFileName: deploy-pods-summary.json
               publishSummaryArtifact: "true"
               summaryArtifactName: validate-baseline-${{ parameters.name }}-${{ parameters.os }}
@@ -297,6 +299,7 @@ stages:
               clusterName: ${{ parameters.clusterName }}-$(commitID)
               os: ${{ parameters.os }}
               cni: cniv2
+              stateBackend: ${{ parameters.stateBackend }}
               restartCase: "true"
               summaryFileName: restart-nodes-summary.json
               failOnRegression: "true"
@@ -322,6 +325,7 @@ stages:
               clusterName: ${{ parameters.clusterName }}-$(commitID)
               os: ${{ parameters.os }}
               cni: cniv2
+              stateBackend: ${{ parameters.stateBackend }}
               restartCase: "true"
               summaryFileName: restart-cns-during-scale-summary.json
               failOnRegression: "true"
@@ -347,6 +351,7 @@ stages:
               clusterName: ${{ parameters.clusterName }}-$(commitID)
               os: ${{ parameters.os }}
               cni: cniv2
+              stateBackend: ${{ parameters.stateBackend }}
               restartCase: "true"
               summaryFileName: restart-cns-summary.json
               failOnRegression: "true"
@@ -454,6 +459,7 @@ stages:
                 clusterName: ${{ parameters.clusterName }}-$(commitID)
                 os: ${{ parameters.os }}
                 cni: cniv2
+                stateBackend: ${{ parameters.stateBackend }}
                 summaryFileName: hns-deploy-pods-summary.json
                 publishSummaryArtifact: "true"
                 summaryArtifactName: validate-baseline-${{ parameters.name }}-hns-${{ parameters.os }}
@@ -476,6 +482,7 @@ stages:
                 clusterName: ${{ parameters.clusterName }}-$(commitID)
                 os: ${{ parameters.os }}
                 cni: cniv2
+                stateBackend: ${{ parameters.stateBackend }}
                 restartCase: "true"
                 summaryFileName: hns-restart-nodes-summary.json
                 failOnRegression: "true"
@@ -499,6 +506,7 @@ stages:
                 clusterName: ${{ parameters.clusterName }}-$(commitID)
                 os: ${{ parameters.os }}
                 cni: cniv2
+                stateBackend: ${{ parameters.stateBackend }}
                 restartCase: "true"
                 summaryFileName: hns-restart-cns-during-scale-summary.json
                 failOnRegression: "true"
@@ -522,6 +530,7 @@ stages:
                 clusterName: ${{ parameters.clusterName }}-$(commitID)
                 os: ${{ parameters.os }}
                 cni: cniv2
+                stateBackend: ${{ parameters.stateBackend }}
                 restartCase: "true"
                 summaryFileName: hns-restart-cns-summary.json
                 failOnRegression: "true"

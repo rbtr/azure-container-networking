@@ -255,6 +255,7 @@ stages:
       iterations: ${ITERATIONS_WIN}
       upgradeScenario: false
       stateValidationMode: bolt-second-start
+      stateBackend: bolt
 
   - template: singletenancy/cniv2-template.yaml
     parameters:
@@ -310,6 +311,7 @@ stages:
       iterations: ${ITERATIONS_LINUX}
       upgradeScenario: false
       stateValidationMode: bolt-second-start
+      stateBackend: bolt
 
   - template: singletenancy/cniv2-template.yaml
     parameters:
@@ -335,6 +337,7 @@ stages:
       iterations: ${ITERATIONS_LINUX}
       upgradeScenario: false
       stateValidationMode: bolt-second-start
+      stateBackend: bolt
 
   - template: singletenancy/cniv2-template.yaml
     parameters:
@@ -398,6 +401,7 @@ stages:
       upgradeScenario: false
       ciliumVersionOverwrite: ${{ parameters.ciliumVersionOverwrite }}
       stateValidationMode: bolt-second-start
+      stateBackend: bolt
 
   - template: cilium/cilium-overlay-load-test-template.yaml
     parameters:
@@ -412,6 +416,7 @@ stages:
       dependsOn: cilium_overlay_bolt
       ciliumVersionOverwrite: ${{ parameters.ciliumVersionOverwrite }}
       stateValidationMode: rollback-json
+      stateBackend: json
 
   - template: cilium/cilium-overlay-load-test-template.yaml
     parameters:

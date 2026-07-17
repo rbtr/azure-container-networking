@@ -15,14 +15,23 @@ type validationSummary struct {
 }
 
 type validationCheckEntry struct {
-	CheckName      string   `json:"checkName"`
-	NodeName       string   `json:"nodeName"`
-	ExpectedCount  int      `json:"expectedCount"`
-	ActualCount    int      `json:"actualCount"`
-	MissingIPs     []string `json:"missingIPs,omitempty"`
-	UnexpectedIPs  []string `json:"unexpectedIPs,omitempty"`
-	DuplicateIPs   []string `json:"duplicateIPs,omitempty"`
-	ValidationPass bool     `json:"validationPass"`
+	CheckName       string   `json:"checkName"`
+	NodeName        string   `json:"nodeName"`
+	ExpectedCount   int      `json:"expectedCount"`
+	ActualCount     int      `json:"actualCount"`
+	MissingIPs      []string `json:"missingIPs,omitempty"`
+	UnexpectedIPs   []string `json:"unexpectedIPs,omitempty"`
+	DuplicateIPs    []string `json:"duplicateIPs,omitempty"`
+	ValidationPass  bool     `json:"validationPass"`
+	StateBackend    string   `json:"stateBackend,omitempty"`
+	Authority       string   `json:"authority,omitempty"`
+	SchemaVersion   uint32   `json:"schemaVersion,omitempty"`
+	Generation      uint64   `json:"generation,omitempty"`
+	BootID          string   `json:"bootID,omitempty"`
+	EndpointCount   int      `json:"endpointCount,omitempty"`
+	AssignmentCount int      `json:"assignmentCount,omitempty"`
+	OwnerCount      int      `json:"ownerCount,omitempty"`
+	TombstoneCount  int      `json:"tombstoneCount,omitempty"`
 }
 
 type summaryStats struct {
@@ -147,10 +156,68 @@ func compareSummaries(baseline, candidate validationSummary) error {
 				check.ActualCount,
 			)
 		}
+		if err := comparePersistentState(baselineCheck, check); err != nil {
+			return err
+		}
 		delete(baselineByCheck, key)
 	}
 	if len(baselineByCheck) != 0 {
 		return fmt.Errorf("%w: candidate is missing %d baseline checks", errSummaryRegression, len(baselineByCheck))
+	}
+	return nil
+}
+
+func comparePersistentState(baseline, candidate validationCheckEntry) error {
+	if baseline.StateBackend == "" {
+		return nil
+	}
+	if candidate.StateBackend != baseline.StateBackend {
+		return fmt.Errorf(
+			"%w: check %q on node %q changed backend from %q to %q",
+			errSummaryRegression,
+			candidate.CheckName,
+			candidate.NodeName,
+			baseline.StateBackend,
+			candidate.StateBackend,
+		)
+	}
+	if candidate.Authority != baseline.Authority || candidate.SchemaVersion != baseline.SchemaVersion {
+		return fmt.Errorf(
+			"%w: check %q on node %q changed authority/schema from %s/%d to %s/%d",
+			errSummaryRegression,
+			candidate.CheckName,
+			candidate.NodeName,
+			baseline.Authority,
+			baseline.SchemaVersion,
+			candidate.Authority,
+			candidate.SchemaVersion,
+		)
+	}
+	if candidate.Generation < baseline.Generation {
+		return fmt.Errorf(
+			"%w: check %q on node %q generation decreased from %d to %d",
+			errSummaryRegression,
+			candidate.CheckName,
+			candidate.NodeName,
+			baseline.Generation,
+			candidate.Generation,
+		)
+	}
+	if candidate.EndpointCount < baseline.EndpointCount ||
+		candidate.AssignmentCount < baseline.AssignmentCount ||
+		candidate.OwnerCount < baseline.OwnerCount {
+		return fmt.Errorf(
+			"%w: check %q on node %q lost persistent records: endpoints %d->%d assignments %d->%d owners %d->%d",
+			errSummaryRegression,
+			candidate.CheckName,
+			candidate.NodeName,
+			baseline.EndpointCount,
+			candidate.EndpointCount,
+			baseline.AssignmentCount,
+			candidate.AssignmentCount,
+			baseline.OwnerCount,
+			candidate.OwnerCount,
+		)
 	}
 	return nil
 }
