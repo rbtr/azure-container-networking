@@ -16,7 +16,6 @@ import (
 
 	"github.com/Azure/azure-container-networking/cns"
 	"github.com/Azure/azure-container-networking/cns/wireserver"
-	"github.com/Azure/azure-container-networking/platform"
 )
 
 const (
@@ -517,6 +516,20 @@ func txStateEmpty(tx *ReadTx) (bool, error) {
 }
 
 func (s *DB) ExportLegacy(ctx context.Context, cnsJSONPath, endpointJSONPath string) error {
+	return s.exportLegacy(
+		ctx,
+		cnsJSONPath,
+		endpointJSONPath,
+		osRollbackFileSystem{},
+	)
+}
+
+func (s *DB) exportLegacy(
+	ctx context.Context,
+	cnsJSONPath string,
+	endpointJSONPath string,
+	fileSystem rollbackFileSystem,
+) error {
 	alreadyComplete := false
 	if viewErr := s.View(ctx, func(tx *ReadTx) error {
 		meta, metaErr := tx.Metadata()
@@ -541,10 +554,10 @@ func (s *DB) ExportLegacy(ctx context.Context, cnsJSONPath, endpointJSONPath str
 	if envelopeErr != nil {
 		return envelopeErr
 	}
-	if writeErr := atomicWriteJSON(cnsJSONPath, cnsEnvelope); writeErr != nil {
+	if writeErr := atomicWriteJSON(fileSystem, cnsJSONPath, cnsEnvelope); writeErr != nil {
 		return writeErr
 	}
-	if writeErr := atomicWriteJSON(endpointJSONPath, endpointEnvelope); writeErr != nil {
+	if writeErr := atomicWriteJSON(fileSystem, endpointJSONPath, endpointEnvelope); writeErr != nil {
 		return writeErr
 	}
 
@@ -657,7 +670,7 @@ func legacyEnvelopes(snapshot Snapshot) (cnsEnvelope, endpointEnvelope LegacyEnv
 	}, nil
 }
 
-func atomicWriteJSON(path string, value any) (err error) {
+func atomicWriteJSON(fileSystem rollbackFileSystem, path string, value any) (err error) {
 	if path == "" {
 		return nil
 	}
@@ -665,11 +678,11 @@ func atomicWriteJSON(path string, value any) (err error) {
 	if err != nil {
 		return fmt.Errorf("encoding legacy state %q: %w", path, err)
 	}
-	if mkdirErr := os.MkdirAll(filepath.Dir(path), 0o755); mkdirErr != nil {
+	if mkdirErr := fileSystem.mkdirAll(filepath.Dir(path), 0o755); mkdirErr != nil {
 		return fmt.Errorf("creating legacy state directory %q: %w", filepath.Dir(path), mkdirErr)
 	}
 
-	file, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	file, err := fileSystem.createTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return fmt.Errorf("creating temporary legacy state file for %q: %w", path, err)
 	}
@@ -677,7 +690,7 @@ func atomicWriteJSON(path string, value any) (err error) {
 	defer func() {
 		_ = file.Close()
 		if err != nil {
-			_ = os.Remove(tempPath)
+			_ = fileSystem.remove(tempPath)
 		}
 	}()
 
@@ -690,8 +703,8 @@ func atomicWriteJSON(path string, value any) (err error) {
 	if err = file.Close(); err != nil {
 		return fmt.Errorf("closing temporary legacy state file for %q: %w", path, err)
 	}
-	if err = platform.ReplaceFile(tempPath, path); err != nil {
-		return fmt.Errorf("replacing legacy state file %q: %w", path, err)
+	if err = fileSystem.durableReplace(tempPath, path); err != nil {
+		return fmt.Errorf("durably replacing legacy state file %q: %w", path, err)
 	}
 	return nil
 }
