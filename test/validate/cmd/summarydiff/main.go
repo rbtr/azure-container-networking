@@ -10,6 +10,8 @@ import (
 
 var errSummaryRegression = errors.New("state validation summary regression")
 
+const stateBackendBolt = "bolt"
+
 type validationSummary struct {
 	Checks []validationCheckEntry `json:"checks,omitempty"`
 }
@@ -24,6 +26,8 @@ type validationCheckEntry struct {
 	DuplicateIPs    []string `json:"duplicateIPs,omitempty"`
 	ValidationPass  bool     `json:"validationPass"`
 	StateBackend    string   `json:"stateBackend,omitempty"`
+	DBFilePresent   *bool    `json:"dbFilePresent,omitempty"`
+	DBFileSizeBytes *int64   `json:"dbFileSizeBytes,omitempty"`
 	Authority       string   `json:"authority,omitempty"`
 	SchemaVersion   uint32   `json:"schemaVersion,omitempty"`
 	Generation      uint64   `json:"generation,omitempty"`
@@ -168,6 +172,41 @@ func compareSummaries(baseline, candidate validationSummary) error {
 }
 
 func comparePersistentState(baseline, candidate validationCheckEntry) error {
+	if candidate.StateBackend == stateBackendBolt {
+		if candidate.DBFilePresent == nil {
+			return fmt.Errorf(
+				"%w: check %q on node %q is missing database file presence metadata",
+				errSummaryRegression,
+				candidate.CheckName,
+				candidate.NodeName,
+			)
+		}
+		if !*candidate.DBFilePresent {
+			return fmt.Errorf(
+				"%w: check %q on node %q reports the database file is missing",
+				errSummaryRegression,
+				candidate.CheckName,
+				candidate.NodeName,
+			)
+		}
+		if candidate.DBFileSizeBytes == nil {
+			return fmt.Errorf(
+				"%w: check %q on node %q is missing database file size metadata",
+				errSummaryRegression,
+				candidate.CheckName,
+				candidate.NodeName,
+			)
+		}
+		if *candidate.DBFileSizeBytes <= 0 {
+			return fmt.Errorf(
+				"%w: check %q on node %q reports non-positive database file size %d",
+				errSummaryRegression,
+				candidate.CheckName,
+				candidate.NodeName,
+				*candidate.DBFileSizeBytes,
+			)
+		}
+	}
 	if baseline.StateBackend == "" {
 		return nil
 	}

@@ -321,7 +321,16 @@ func (service *HTTPRestService) HandleDebugPersistentState(w http.ResponseWriter
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := common.Encode(w, &snapshot); err != nil {
+	storage, err := service.persistentState.StorageMetadata()
+	if err != nil {
+		http.Error(w, "failed to inspect persistent state storage", http.StatusInternalServerError)
+		return
+	}
+	response := persistentstate.DebugResponse{
+		Snapshot: snapshot,
+		Storage:  storage,
+	}
+	if err := common.Encode(w, &response); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

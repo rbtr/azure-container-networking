@@ -30,6 +30,8 @@ var (
 
 type persistentStateDetails struct {
 	Backend         string
+	DBFilePresent   bool
+	DBFileSizeBytes int64
 	Authority       string
 	SchemaVersion   uint32
 	Generation      uint64
@@ -94,13 +96,13 @@ func persistentStateCommand(osName string) []string {
 }
 
 func cnsPersistentStateIPs(result []byte) (map[string]string, error) {
-	snapshot, err := decodePersistentState(result)
+	response, err := decodePersistentState(result)
 	if err != nil {
 		return nil, err
 	}
 
 	podIPs := make(map[string]string)
-	for _, endpoint := range snapshot.Endpoints {
+	for _, endpoint := range response.Snapshot.Endpoints {
 		for _, ipInfo := range endpoint.IfnameToIPMap {
 			if ipInfo == nil || !ipInfo.NICType.IsInfraOrLegacy() {
 				continue
@@ -117,12 +119,15 @@ func cnsPersistentStateIPs(result []byte) (map[string]string, error) {
 }
 
 func inspectPersistentState(result []byte) (persistentStateDetails, error) {
-	snapshot, err := decodePersistentState(result)
+	response, err := decodePersistentState(result)
 	if err != nil {
 		return persistentStateDetails{}, err
 	}
-	return persistentStateDetails{
-		Backend:         stateBackendBolt,
+	snapshot := response.Snapshot
+	details := persistentStateDetails{
+		Backend:         string(response.Storage.Backend),
+		DBFilePresent:   response.Storage.FilePresent,
+		DBFileSizeBytes: response.Storage.FileSizeBytes,
 		Authority:       string(snapshot.Metadata.Authority),
 		SchemaVersion:   snapshot.Metadata.SchemaVersion,
 		Generation:      snapshot.Metadata.Generation,
@@ -131,33 +136,67 @@ func inspectPersistentState(result []byte) (persistentStateDetails, error) {
 		AssignmentCount: len(snapshot.Assignments),
 		OwnerCount:      len(snapshot.IPOwners),
 		TombstoneCount:  len(snapshot.DeleteIntents),
-	}, nil
+	}
+
+	if response.Storage.Backend == "" {
+		return details, errors.New("persistent state storage metadata is missing")
+	}
+	if response.Storage.Backend != persistentstate.StorageBackendBolt {
+		return details, errors.Errorf(
+			"unexpected persistent state storage backend %q, expected %q",
+			response.Storage.Backend,
+			persistentstate.StorageBackendBolt,
+		)
+	}
+	if !response.Storage.FilePresent {
+		return details, errors.New("persistent state database file is missing")
+	}
+	if response.Storage.FileSizeBytes <= 0 {
+		return details, errors.Errorf(
+			"persistent state database file size must be positive, got %d",
+			response.Storage.FileSizeBytes,
+		)
+	}
+	return details, nil
 }
 
-func decodePersistentState(result []byte) (persistentstate.Snapshot, error) {
-	var snapshot persistentstate.Snapshot
-	if err := json.Unmarshal(result, &snapshot); err != nil { //nolint:musttag // Snapshot includes existing CNS wire types.
-		return persistentstate.Snapshot{}, errors.Wrap(err, "failed to unmarshal CNS persistent state")
+func decodePersistentState(result []byte) (persistentstate.DebugResponse, error) {
+	var envelope struct {
+		Snapshot json.RawMessage `json:"snapshot"`
 	}
+	if err := json.Unmarshal(result, &envelope); err != nil {
+		return persistentstate.DebugResponse{}, errors.Wrap(err, "failed to unmarshal CNS persistent state response")
+	}
+
+	var response persistentstate.DebugResponse
+	if envelope.Snapshot == nil {
+		if err := json.Unmarshal(result, &response.Snapshot); err != nil { //nolint:musttag // Snapshot includes existing CNS wire types.
+			return persistentstate.DebugResponse{}, errors.Wrap(err, "failed to unmarshal legacy CNS persistent state")
+		}
+	} else if err := json.Unmarshal(result, &response); err != nil { //nolint:musttag // Snapshot includes existing CNS wire types.
+		return persistentstate.DebugResponse{}, errors.Wrap(err, "failed to unmarshal CNS persistent state response")
+	}
+
+	snapshot := response.Snapshot
 	if err := snapshot.Validate(); err != nil {
-		return persistentstate.Snapshot{}, errors.Wrap(err, "invalid CNS persistent state")
+		return persistentstate.DebugResponse{}, errors.Wrap(err, "invalid CNS persistent state")
 	}
 	if snapshot.Metadata.Authority != persistentstate.AuthorityBolt {
-		return persistentstate.Snapshot{}, errors.Errorf(
+		return persistentstate.DebugResponse{}, errors.Errorf(
 			"unexpected persistent state authority %q, expected %q",
 			snapshot.Metadata.Authority,
 			persistentstate.AuthorityBolt,
 		)
 	}
 	if snapshot.Metadata.SchemaVersion != persistentstate.SchemaVersion {
-		return persistentstate.Snapshot{}, errors.Errorf(
+		return persistentstate.DebugResponse{}, errors.Errorf(
 			"unexpected persistent state schema %d, expected %d",
 			snapshot.Metadata.SchemaVersion,
 			persistentstate.SchemaVersion,
 		)
 	}
 	if snapshot.Metadata.BootID == "" {
-		return persistentstate.Snapshot{}, errors.New("persistent state boot ID is empty")
+		return persistentstate.DebugResponse{}, errors.New("persistent state boot ID is empty")
 	}
-	return snapshot, nil
+	return response, nil
 }

@@ -111,7 +111,7 @@ func TestPersistentDurableWriteFailureRestoresCommittedState(t *testing.T) {
 func TestHandleDebugPersistentState(t *testing.T) {
 	svc := getTestService("KubernetesCRD")
 	require.NoError(t, seedAvailableIPs(t, svc, testNCID, map[string]string{testIPID1: testIP1}))
-	db := attachPersistentState(t, svc)
+	db, path := openPersistentStateForTest(t, svc)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 
 	recorder := httptest.NewRecorder()
@@ -119,9 +119,13 @@ func TestHandleDebugPersistentState(t *testing.T) {
 	svc.HandleDebugPersistentState(recorder, request)
 	require.Equal(t, 200, recorder.Code)
 
-	var snapshot state.Snapshot
-	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &snapshot)) //nolint:musttag // Snapshot includes legacy CNS request types.
-	require.Contains(t, snapshot.IPs, testIPID1)
+	var response state.DebugResponse
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response)) //nolint:musttag // Snapshot includes legacy CNS request types.
+	require.Contains(t, response.Snapshot.IPs, testIPID1)
+	require.Equal(t, state.StorageBackendBolt, response.Storage.Backend)
+	require.True(t, response.Storage.FilePresent)
+	require.Positive(t, response.Storage.FileSizeBytes)
+	require.NotContains(t, recorder.Body.String(), path)
 }
 
 func openPersistentStateForTest(t *testing.T, svc *HTTPRestService) (db *state.DB, path string) {

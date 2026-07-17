@@ -89,5 +89,18 @@ After a successful export, return `StateStoreMode` to `normal`.
 ## Debugging
 
 When Bolt is enabled, `POST /debug/persistentstate` returns the validated
-logical database snapshot. State validation uses this endpoint instead of
-parsing bbolt pages directly.
+logical database snapshot with safe storage metadata:
+
+```json
+{
+  "snapshot": {},
+  "storage": {
+    "backend": "bolt",
+    "filePresent": true,
+    "fileSizeBytes": 32768
+  }
+}
+```
+
+State validation uses this endpoint instead of parsing bbolt pages directly.
+The response does not expose the database path or raw pages.

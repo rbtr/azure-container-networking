@@ -77,6 +77,8 @@ type ValidationCheckEntry struct {
 	DuplicateIPs    []string `json:"duplicateIPs,omitempty"`
 	ValidationPass  bool     `json:"validationPass"`
 	StateBackend    string   `json:"stateBackend,omitempty"`
+	DBFilePresent   *bool    `json:"dbFilePresent,omitempty"`
+	DBFileSizeBytes *int64   `json:"dbFileSizeBytes,omitempty"`
 	Authority       string   `json:"authority,omitempty"`
 	SchemaVersion   uint32   `json:"schemaVersion,omitempty"`
 	Generation      uint64   `json:"generation,omitempty"`
@@ -198,6 +200,7 @@ func (v *Validator) validateIPs(ctx context.Context, stateCheck check) error {
 		converged := false
 		var comparison ipComparisonResult
 		var persistentDetails persistentStateDetails
+		var persistentValidationErr error
 
 		for attempt := 1; attempt <= maxAttempts; attempt++ {
 			attempts = attempt
@@ -222,9 +225,15 @@ func (v *Validator) validateIPs(ctx context.Context, stateCheck check) error {
 				return errors.Wrapf(err, "failed to get pod ips from state file on node %v", nodeName)
 			}
 			if stateCheck.persistentState {
-				persistentDetails, err = inspectPersistentState(result)
-				if err != nil {
-					return errors.Wrapf(err, "failed to validate persistent state on node %v", nodeName)
+				details, inspectErr := inspectPersistentState(result)
+				persistentDetails = details
+				if inspectErr != nil {
+					persistentValidationErr = errors.Wrapf(
+						inspectErr,
+						"failed to validate persistent state on node %v",
+						nodeName,
+					)
+					break
 				}
 			}
 			if stateCheck.metadataOnly {
@@ -249,6 +258,14 @@ func (v *Validator) validateIPs(ctx context.Context, stateCheck check) error {
 			}
 		}
 
+		var dbFilePresent *bool
+		var dbFileSizeBytes *int64
+		if stateCheck.persistentState {
+			present := persistentDetails.DBFilePresent
+			sizeBytes := persistentDetails.DBFileSizeBytes
+			dbFilePresent = &present
+			dbFileSizeBytes = &sizeBytes
+		}
 		v.summary.Checks = append(v.summary.Checks, ValidationCheckEntry{
 			CheckName:       checkType,
 			NodeName:        nodeName,
@@ -260,8 +277,10 @@ func (v *Validator) validateIPs(ctx context.Context, stateCheck check) error {
 			MissingIPs:      comparison.MissingIPs,
 			UnexpectedIPs:   comparison.UnexpectedIPs,
 			DuplicateIPs:    comparison.DuplicateIPs,
-			ValidationPass:  converged && !comparison.HasMismatch(),
+			ValidationPass:  persistentValidationErr == nil && converged && !comparison.HasMismatch(),
 			StateBackend:    persistentDetails.Backend,
+			DBFilePresent:   dbFilePresent,
+			DBFileSizeBytes: dbFileSizeBytes,
 			Authority:       persistentDetails.Authority,
 			SchemaVersion:   persistentDetails.SchemaVersion,
 			Generation:      persistentDetails.Generation,
@@ -272,6 +291,9 @@ func (v *Validator) validateIPs(ctx context.Context, stateCheck check) error {
 			TombstoneCount:  persistentDetails.TombstoneCount,
 		})
 
+		if persistentValidationErr != nil {
+			return persistentValidationErr
+		}
 		if !converged || comparison.HasMismatch() {
 			return errors.Errorf(
 				"State file validation failed for %s on node %s after %d/%d attempts: expected=%d actual=%d missing=%v unexpected=%v duplicate=%v",

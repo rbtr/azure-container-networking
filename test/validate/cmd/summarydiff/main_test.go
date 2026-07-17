@@ -84,6 +84,8 @@ func TestCompareSummariesRejectsPersistentStateRegression(t *testing.T) {
 		NodeName:        testNodeName,
 		ValidationPass:  true,
 		StateBackend:    "bolt",
+		DBFilePresent:   boolPointer(true),
+		DBFileSizeBytes: int64Pointer(4096),
 		Authority:       "bolt",
 		SchemaVersion:   1,
 		Generation:      10,
@@ -96,6 +98,8 @@ func TestCompareSummariesRejectsPersistentStateRegression(t *testing.T) {
 		NodeName:        testNodeName,
 		ValidationPass:  true,
 		StateBackend:    "bolt",
+		DBFilePresent:   boolPointer(true),
+		DBFileSizeBytes: int64Pointer(4096),
 		Authority:       "bolt",
 		SchemaVersion:   1,
 		Generation:      9,
@@ -105,4 +109,74 @@ func TestCompareSummariesRejectsPersistentStateRegression(t *testing.T) {
 	}}}
 
 	assert.Error(t, compareSummaries(baseline, candidate))
+}
+
+func TestCompareSummariesValidatesPersistentStorage(t *testing.T) {
+	tests := []struct {
+		name        string
+		filePresent *bool
+		fileSize    *int64
+		wantErr     bool
+	}{
+		{
+			name:     "missing presence metadata",
+			fileSize: int64Pointer(4096),
+			wantErr:  true,
+		},
+		{
+			name:        "database file missing",
+			filePresent: boolPointer(false),
+			fileSize:    int64Pointer(4096),
+			wantErr:     true,
+		},
+		{
+			name:        "missing size metadata",
+			filePresent: boolPointer(true),
+			wantErr:     true,
+		},
+		{
+			name:        "zero-sized database file",
+			filePresent: boolPointer(true),
+			fileSize:    int64Pointer(0),
+			wantErr:     true,
+		},
+		{
+			name:        "non-zero database file",
+			filePresent: boolPointer(true),
+			fileSize:    int64Pointer(4096),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			baseline := validationSummary{Checks: []validationCheckEntry{{
+				CheckName:      testCheckName,
+				NodeName:       testNodeName,
+				ValidationPass: true,
+			}}}
+			candidate := validationSummary{Checks: []validationCheckEntry{{
+				CheckName:       testCheckName,
+				NodeName:        testNodeName,
+				ValidationPass:  true,
+				StateBackend:    stateBackendBolt,
+				DBFilePresent:   tt.filePresent,
+				DBFileSizeBytes: tt.fileSize,
+			}}}
+
+			err := compareSummaries(baseline, candidate)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func boolPointer(value bool) *bool {
+	return &value
+}
+
+func int64Pointer(value int64) *int64 {
+	return &value
 }
