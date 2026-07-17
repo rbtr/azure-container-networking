@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/Azure/azure-container-networking/cns"
 	"github.com/Azure/azure-container-networking/cns/configuration"
 	persistentstate "github.com/Azure/azure-container-networking/cns/state"
 	"github.com/Azure/azure-container-networking/platform"
@@ -48,6 +49,13 @@ type persistentStateResult struct {
 	rebooted            bool
 	cnsStoreLock        processlock.Interface
 	endpointStoreLock   processlock.Interface
+}
+
+func persistentStateBootPolicy(channelMode string) persistentstate.BootPolicy {
+	resetNetworkContainerReadiness := channelMode == cns.CRD ||
+		channelMode == cns.MultiTenantCRD ||
+		channelMode == cns.AzureHost
+	return platformPersistentStateBootPolicy(resetNetworkContainerReadiness)
 }
 
 func (r *persistentStateResult) UnlockLegacyCNSStore() error {

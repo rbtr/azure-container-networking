@@ -738,16 +738,13 @@ func main() {
 	if persistentStatePath == "" {
 		persistentStatePath = filepath.Join(storeFileLocation, name+".db")
 	}
-	resetReadiness := config.ChannelMode == cns.CRD ||
-		config.ChannelMode == cns.MultiTenantCRD ||
-		config.ChannelMode == cns.AzureHost
 	stateResult, err := initializePersistentState(
 		rootCtx,
 		persistentStateStartupConfig{
 			backend:             cnsconfig.EffectiveStateStoreBackend(),
 			mode:                cnsconfig.EffectiveStateStoreMode(),
 			manageEndpointState: cnsconfig.ManageEndpointState,
-			bootPolicy:          platformPersistentStateBootPolicy(resetReadiness),
+			bootPolicy:          persistentStateBootPolicy(config.ChannelMode),
 			paths: persistentStatePaths{
 				legacyCNS:      legacyCNSPath,
 				legacyEndpoint: legacyEndpointPath,
