@@ -905,6 +905,8 @@ workspace: ## Set up the Go workspace.
 ##@ Test
 
 COVER_PKG ?= .
+CNS_STATE_COVERAGE_THRESHOLD ?= 90.0
+CNS_STATE_COVERAGE_PROFILE ?= state-coverage.out
 #Restart case is used for cni load test pipeline for restarting the nodes cluster.
 RESTART_CASE ?= false
 # CNI type is a key to direct the types of state validation done on a cluster.
@@ -915,6 +917,19 @@ test-all: test-azure-ipam test-azure-ip-masq-merger test-azure-iptables-monitor 
 test-main:
 	go test -mod=readonly -buildvcs=false -tags "unit" --skip 'TestE2E*' -race -covermode atomic -coverprofile=coverage-main.out $(COVER_PKG)/...
 	go tool cover -func=coverage-main.out
+
+test-state-coverage: ## run cns/state tests and enforce minimum statement coverage.
+	bash hack/scripts/check-go-coverage_test.sh
+	go test -mod=readonly -buildvcs=false -race -shuffle=on -count=1 \
+		-covermode=atomic -coverprofile="$(CNS_STATE_COVERAGE_PROFILE)" ./cns/state
+	@set -o pipefail; \
+		export LC_ALL=C; \
+		go tool cover -func="$(CNS_STATE_COVERAGE_PROFILE)" | \
+		awk -v minimum="$(CNS_STATE_COVERAGE_THRESHOLD)" \
+			-v label="CNS state" \
+			-v threshold_name="CNS_STATE_COVERAGE_THRESHOLD" \
+			-v profile="$(CNS_STATE_COVERAGE_PROFILE)" \
+			-f hack/scripts/check-go-coverage.awk
 
 test-integration: ## run all integration tests.
 	AZURE_IPAM_VERSION=$(AZURE_IPAM_VERSION) \

@@ -98,6 +98,9 @@ jobs:
           name: linux-coverage-${{ matrix.os }}
           path: linux-coverage.out
 
+      - name: Enforce CNS state coverage
+        run: make test-state-coverage
+
   test-windows:
     name: Test Windows
     runs-on: windows-latest
