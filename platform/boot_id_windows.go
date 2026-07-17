@@ -20,17 +20,26 @@ type bootEnvironmentInformation struct {
 	BootFlags      uint64
 }
 
-func BootID() (string, error) {
-	var (
-		info         bootEnvironmentInformation
-		returnLength uint32
-	)
+type bootEnvironmentQuery func(*bootEnvironmentInformation) uint32
+
+func queryBootEnvironment(info *bootEnvironmentInformation) uint32 {
+	var returnLength uint32
 	status, _, _ := ntQuerySystemInformation.Call(
 		systemBootEnvironmentInformation,
-		uintptr(unsafe.Pointer(&info)),
-		unsafe.Sizeof(info),
+		uintptr(unsafe.Pointer(info)),
+		unsafe.Sizeof(*info),
 		uintptr(unsafe.Pointer(&returnLength)),
 	)
+	return uint32(status)
+}
+
+func BootID() (string, error) {
+	return bootID(queryBootEnvironment)
+}
+
+func bootID(query bootEnvironmentQuery) (string, error) {
+	var info bootEnvironmentInformation
+	status := query(&info)
 	if status != 0 {
 		return "", fmt.Errorf("querying Windows boot ID: NTSTATUS 0x%x", status)
 	}

@@ -10,8 +10,12 @@ import (
 )
 
 func (osRollbackFileSystem) durableReplace(source, destination string) error {
+	return durableReplaceFile(source, destination, platform.ReplaceFile)
+}
+
+func durableReplaceFile(source, destination string, replace func(string, string) error) error {
 	// ReplaceFile uses MOVEFILE_WRITE_THROUGH, so the replacement is durable before it returns.
-	if err := platform.ReplaceFile(source, destination); err != nil {
+	if err := replace(source, destination); err != nil {
 		return fmt.Errorf("replacing file: %w", err)
 	}
 	return nil
