@@ -77,7 +77,7 @@ steps:
             normalizedNodeBootID=$(tr '[:upper:]' '[:lower:]' <<<"$nodeBootID" | tr -d '{}[:space:]')
             normalizedStateBootID=$(tr '[:upper:]' '[:lower:]' <<<"$stateBootID" | tr -d '{}[:space:]')
             if [[ "$normalizedNodeBootID" != "$normalizedStateBootID" ]]; then
-              echo "persistent boot ID does not match Kubernetes node boot ID for $node"
+              echo "persistent boot ID $stateBootID does not match Kubernetes node boot ID $nodeBootID for $node"
               exit 1
             fi
           done < <(

@@ -49,7 +49,7 @@ stages:
           - bash: |
               set -euo pipefail
               go version
-              commitID="$(make revision)-$(Build.BuildId)"
+              commitID="$(Build.BuildId)"
               echo "##vso[task.setvariable variable=commitID;isOutput=true]$commitID"
               echo "Migration gate commit ID: $commitID"
               echo "Fault injection hooks enabled: ${{ parameters.enableFaultInjectionHooks }}"
