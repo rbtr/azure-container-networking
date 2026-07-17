@@ -134,6 +134,22 @@ func initializePersistentState(
 	}
 }
 
+// runPersistentStateStartup transfers ownership of initialized state to start.
+func runPersistentStateStartup(
+	ctx context.Context,
+	config persistentStateStartupConfig,
+	providers persistentStateProviders,
+	start func(persistentStateResult),
+) error {
+	result, err := initializePersistentState(ctx, config, providers)
+	if err != nil {
+		return err
+	}
+
+	start(result)
+	return nil
+}
+
 func exportPersistentStateRollback(
 	ctx context.Context,
 	paths persistentStatePaths,

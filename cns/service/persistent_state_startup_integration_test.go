@@ -32,6 +32,7 @@ const (
 var (
 	errStartupBootIDUnavailable    = errors.New("boot ID unavailable")
 	errStartupMetadataBucketAbsent = errors.New("metadata bucket is missing")
+	errStartupRollbackUnavailable  = errors.New("rollback unavailable")
 )
 
 func TestPersistentStateBootPolicyByChannelMode(t *testing.T) {
@@ -319,6 +320,152 @@ func TestInitializePersistentStateCleansUpPartialStartup(t *testing.T) {
 	require.ErrorIs(t, err, errStartupBootIDUnavailable)
 	assert.Nil(t, result.database)
 	assertStartupDatabaseReopens(t, config.paths.database)
+}
+
+func TestRunPersistentStateStartupGatesStart(t *testing.T) {
+	tests := []struct {
+		name            string
+		prepare         func(*testing.T, *persistentStateStartupConfig, *persistentStateProviders) context.Context
+		wantErr         error
+		wantErrContains string
+		wantStartCalls  int
+	}{
+		{
+			name:           "success",
+			wantStartCalls: 1,
+		},
+		{
+			name: "legacy import failure",
+			prepare: func(t *testing.T, config *persistentStateStartupConfig, _ *persistentStateProviders) context.Context {
+				require.NoError(t, os.MkdirAll(filepath.Dir(config.paths.legacyCNS), 0o755))
+				require.NoError(t, os.WriteFile(config.paths.legacyCNS, []byte("{"), 0o600))
+				return t.Context()
+			},
+			wantErrContains: "importing legacy CNS state",
+		},
+		{
+			name: "corrupt database",
+			prepare: func(t *testing.T, config *persistentStateStartupConfig, _ *persistentStateProviders) context.Context {
+				require.NoError(t, os.MkdirAll(filepath.Dir(config.paths.database), 0o755))
+				require.NoError(t, os.WriteFile(config.paths.database, []byte("not a Bolt database"), 0o600))
+				return t.Context()
+			},
+			wantErrContains: "opening Bolt state store",
+		},
+		{
+			name: "schema mismatch",
+			prepare: func(t *testing.T, config *persistentStateStartupConfig, _ *persistentStateProviders) context.Context {
+				require.NoError(t, os.MkdirAll(filepath.Dir(config.paths.database), 0o755))
+				database, err := persistentstate.Open(config.paths.database, persistentstate.Options{})
+				require.NoError(t, err)
+				require.NoError(t, database.Close())
+				setStartupSchemaVersion(t, config.paths.database, persistentstate.SchemaVersion+1)
+				return t.Context()
+			},
+			wantErr: persistentstate.ErrSchemaMismatch,
+		},
+		{
+			name: "boot ID failure",
+			prepare: func(t *testing.T, _ *persistentStateStartupConfig, providers *persistentStateProviders) context.Context {
+				providers.bootID = func() (string, error) {
+					return "", errStartupBootIDUnavailable
+				}
+				return t.Context()
+			},
+			wantErr: errStartupBootIDUnavailable,
+		},
+		{
+			name: "rollback failure",
+			prepare: func(
+				t *testing.T,
+				config *persistentStateStartupConfig,
+				providers *persistentStateProviders,
+			) context.Context {
+				config.backend = configuration.StateStoreBackendJSON
+				config.mode = configuration.StateStoreModeRollbackToJSON
+				require.NoError(t, os.MkdirAll(filepath.Dir(config.paths.database), 0o755))
+				require.NoError(t, os.WriteFile(config.paths.database, []byte("state"), 0o600))
+				providers.openDatabase = func(string, persistentstate.Options) (*persistentstate.DB, error) {
+					return nil, errStartupRollbackUnavailable
+				}
+				return t.Context()
+			},
+			wantErr: errStartupRollbackUnavailable,
+		},
+		{
+			name: "database lock",
+			prepare: func(
+				t *testing.T,
+				config *persistentStateStartupConfig,
+				providers *persistentStateProviders,
+			) context.Context {
+				require.NoError(t, os.MkdirAll(filepath.Dir(config.paths.database), 0o755))
+				held, err := persistentstate.Open(config.paths.database, persistentstate.Options{})
+				require.NoError(t, err)
+				t.Cleanup(func() {
+					_ = held.Close()
+				})
+				providers.openDatabase = func(path string, _ persistentstate.Options) (*persistentstate.DB, error) {
+					return persistentstate.Open(path, persistentstate.Options{Timeout: 25 * time.Millisecond})
+				}
+				return t.Context()
+			},
+			wantErrContains: "opening Bolt state store",
+		},
+		{
+			name: "database permission",
+			prepare: func(t *testing.T, _ *persistentStateStartupConfig, providers *persistentStateProviders) context.Context {
+				providers.openDatabase = func(string, persistentstate.Options) (*persistentstate.DB, error) {
+					return nil, os.ErrPermission
+				}
+				return t.Context()
+			},
+			wantErr: os.ErrPermission,
+		},
+		{
+			name: "canceled context",
+			prepare: func(t *testing.T, _ *persistentStateStartupConfig, _ *persistentStateProviders) context.Context {
+				ctx, cancel := context.WithCancel(t.Context())
+				cancel()
+				return ctx
+			},
+			wantErr: context.Canceled,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			config := testPersistentStateStartupConfig(t.TempDir(), configuration.StateStoreBackendBolt)
+			providers := startupPersistentStateProviders("boot-1")
+			ctx := t.Context()
+			if test.prepare != nil {
+				ctx = test.prepare(t, &config, &providers)
+			}
+
+			startCalls := 0
+			var startedState *persistentStateResult
+			err := runPersistentStateStartup(ctx, config, providers, func(result persistentStateResult) {
+				startCalls++
+				startedState = &result
+			})
+			if startedState != nil {
+				require.NoError(t, startedState.Close())
+			}
+
+			if test.wantErr == nil && test.wantErrContains == "" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				if test.wantErr != nil {
+					require.ErrorIs(t, err, test.wantErr)
+				}
+				if test.wantErrContains != "" {
+					assert.Contains(t, err.Error(), test.wantErrContains)
+				}
+			}
+			assert.Equal(t, test.wantStartCalls, startCalls)
+		})
+	}
 }
 
 func startupPersistentStateProviders(bootID string) persistentStateProviders {

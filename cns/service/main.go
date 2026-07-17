@@ -738,7 +738,8 @@ func main() {
 	if persistentStatePath == "" {
 		persistentStatePath = filepath.Join(storeFileLocation, name+".db")
 	}
-	stateResult, err := initializePersistentState(
+	var stateResult persistentStateResult
+	err = runPersistentStateStartup(
 		rootCtx,
 		persistentStateStartupConfig{
 			backend:             cnsconfig.EffectiveStateStoreBackend(),
@@ -759,6 +760,9 @@ func main() {
 				return platform.NewExecClient(nil).GetLastRebootTime()
 			},
 			openDatabase: persistentstate.Open,
+		},
+		func(result persistentStateResult) {
+			stateResult = result
 		},
 	)
 	if err != nil {
