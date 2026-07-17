@@ -108,6 +108,7 @@ type HTTPRestService struct {
 	PnpIDByMacAddress          map[string]string
 	imdsClient                 imdsClient
 	nodesubnetIPFetcher        *nodesubnet.IPFetcher
+	faultInjector              *faultInjector
 }
 
 func (service *HTTPRestService) SetPersistentStateStore(database *persistentstate.DB) {
@@ -275,6 +276,7 @@ func NewHTTPRestService(config *common.ServiceConfig, wscli interfaceGetter, wsp
 		homeAzMonitor:            homeAzMonitor,
 		cniConflistGenerator:     gen,
 		imdsClient:               imdsClient,
+		faultInjector:            newFaultInjectorFromEnv(),
 	}, nil
 }
 
@@ -331,6 +333,9 @@ func (service *HTTPRestService) Init(config *common.ServiceConfig) error {
 	listener.AddHandler(cns.PathDebugPodContext, service.HandleDebugPodContext)
 	listener.AddHandler(cns.PathDebugRestData, service.HandleDebugRestData)
 	listener.AddHandler(cns.PathDebugPersistentState, service.HandleDebugPersistentState)
+	if service.faultInjector != nil {
+		listener.AddHandler(faultInjectionPath, service.faultInjector.handle)
+	}
 	listener.AddHandler(cns.NetworkContainersURLPath, service.getOrRefreshNetworkContainers)
 	listener.AddHandler(cns.GetHomeAz, service.getHomeAz)
 	listener.AddHandler(cns.EndpointPath, service.EndpointHandlerAPI)

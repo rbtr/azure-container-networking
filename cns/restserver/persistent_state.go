@@ -48,6 +48,7 @@ func (service *HTTPRestService) requestIPConfigsWithPersistentStateLocked(
 		IPIDs: append([]string(nil), service.PodIPIDByPodInterfaceKey[podInfo.Key()]...),
 	}
 
+	service.reachFaultPoint(faultPointAddBeforeEndpointCommit, podInfo.Name(), podInfo.Namespace())
 	if err := service.persistentState.AssignEndpoint(
 		ctx,
 		assignment,
@@ -93,6 +94,7 @@ func (service *HTTPRestService) releaseIPConfigsWithPersistentStateLocked(ctx co
 		return fmt.Errorf("releasing persistent endpoint state: %w", err)
 	}
 
+	service.reachFaultPoint(faultPointDeleteAfterIntentCommit, podInfo.Name(), podInfo.Namespace())
 	delete(service.EndpointState, podInfo.InfraContainerID())
 	for containerID, intent := range service.EndpointDeleteIntents {
 		if endpointDeleteIntentExpired(intent, now) {

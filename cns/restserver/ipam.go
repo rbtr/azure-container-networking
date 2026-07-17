@@ -1527,6 +1527,7 @@ func (service *HTTPRestService) UpdateEndpointHelper(endpointID string, req map[
 		updateIPInfoMap(endpointInfo.IfnameToIPMap, interfaceInfo, ifName, endpointID)
 	}
 	if service.persistentState != nil {
+		service.reachFaultPoint(faultPointPatchBeforeEndpointCommit, endpointInfo.PodName, endpointInfo.PodNamespace)
 		err := service.persistentState.PatchEndpoint(
 			context.TODO(),
 			endpointID,
