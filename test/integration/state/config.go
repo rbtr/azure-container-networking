@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -25,13 +26,22 @@ const (
 	envFaultWorkloadImage  = "MIGRATION_FAULT_WORKLOAD_IMAGE"
 	envValidateBackend     = "VALIDATE_STATE_BACKEND"
 
-	faultTokenEnv    = "CNS_TEST_FAULT_INJECTION_TOKEN"
-	faultTokenHeader = "X-CNS-Test-Fault-Token"
+	faultTokenEnv    = "CNS_TEST_FAULT_INJECTION_TOKEN" // #nosec G101 -- environment variable name, not a credential.
+	faultTokenHeader = "X-CNS-Test-Fault-Token"         // #nosec G101 -- HTTP header name, not a credential.
 	faultAPIPath     = "/debug/faultinjection"
 
 	defaultScaleReplicas = 20
 	defaultTimeout       = 45 * time.Minute
 	defaultWorkloadImage = "mcr.microsoft.com/oss/kubernetes/pause:3.6"
+	linuxOS              = "linux"
+	windowsOS            = "windows"
+	boltBackend          = "bolt"
+)
+
+var (
+	errInvalidFaultConfig  = errors.New("invalid migration fault configuration")
+	errCNSContainerMissing = errors.New("container exposing the CNS API was not found") //nolint:unused // Used by load-tagged tests.
+	errNoReadyCNSPod       = errors.New("no ready CNS pod found")
 )
 
 type scenario string
@@ -75,7 +85,7 @@ type migrationCNSConfig struct {
 func loadFaultConfig(getenv func(string) string) (faultConfig, error) {
 	cfg := faultConfig{
 		Scenario:      scenario(valueOrDefault(getenv(envFaultScenario), string(scenarioAll))),
-		OS:            strings.ToLower(valueOrDefault(getenv(envFaultOS), "linux")),
+		OS:            strings.ToLower(valueOrDefault(getenv(envFaultOS), linuxOS)),
 		CNI:           strings.ToLower(valueOrDefault(getenv(envFaultCNI), "cilium")),
 		RunID:         getenv(envFaultRunID),
 		ArtifactDir:   getenv(envFaultArtifactDir),
@@ -86,33 +96,33 @@ func loadFaultConfig(getenv func(string) string) (faultConfig, error) {
 	if _, err := cfg.scenarios(); err != nil {
 		return faultConfig{}, err
 	}
-	if cfg.OS != "linux" && cfg.OS != "windows" {
-		return faultConfig{}, fmt.Errorf("unsupported migration fault OS %q", cfg.OS)
+	if cfg.OS != linuxOS && cfg.OS != windowsOS {
+		return faultConfig{}, fmt.Errorf("%w: unsupported OS %q", errInvalidFaultConfig, cfg.OS)
 	}
 	if !supportedCNI(cfg.OS, cfg.CNI) {
-		return faultConfig{}, fmt.Errorf("unsupported migration fault CNI %q for OS %q", cfg.CNI, cfg.OS)
+		return faultConfig{}, fmt.Errorf("%w: unsupported CNI %q for OS %q", errInvalidFaultConfig, cfg.CNI, cfg.OS)
 	}
 	if cfg.RunID == "" {
-		return faultConfig{}, fmt.Errorf("%s is required", envFaultRunID)
+		return faultConfig{}, fmt.Errorf("%w: %s is required", errInvalidFaultConfig, envFaultRunID)
 	}
 	if cfg.ArtifactDir == "" {
-		return faultConfig{}, fmt.Errorf("%s is required", envFaultArtifactDir)
+		return faultConfig{}, fmt.Errorf("%w: %s is required", errInvalidFaultConfig, envFaultArtifactDir)
 	}
-	if strings.ToLower(getenv(envValidateBackend)) != "bolt" {
-		return faultConfig{}, fmt.Errorf("%s must be bolt", envValidateBackend)
+	if !strings.EqualFold(getenv(envValidateBackend), boltBackend) {
+		return faultConfig{}, fmt.Errorf("%w: %s must be %s", errInvalidFaultConfig, envValidateBackend, boltBackend)
 	}
 
 	if raw := getenv(envFaultScaleReplicas); raw != "" {
 		replicas, err := strconv.ParseInt(raw, 10, 32)
 		if err != nil || replicas < 2 {
-			return faultConfig{}, fmt.Errorf("%s must be an integer greater than one", envFaultScaleReplicas)
+			return faultConfig{}, fmt.Errorf("%w: %s must be an integer greater than one", errInvalidFaultConfig, envFaultScaleReplicas)
 		}
 		cfg.ScaleReplicas = int32(replicas)
 	}
 	if raw := getenv(envFaultTimeoutMinutes); raw != "" {
 		minutes, err := strconv.Atoi(raw)
 		if err != nil || minutes <= 0 {
-			return faultConfig{}, fmt.Errorf("%s must be a positive integer", envFaultTimeoutMinutes)
+			return faultConfig{}, fmt.Errorf("%w: %s must be a positive integer", errInvalidFaultConfig, envFaultTimeoutMinutes)
 		}
 		cfg.Timeout = time.Duration(minutes) * time.Minute
 	}
@@ -121,9 +131,9 @@ func loadFaultConfig(getenv func(string) string) (faultConfig, error) {
 
 func supportedCNI(osName, cni string) bool {
 	switch osName {
-	case "linux":
+	case linuxOS:
 		return cni == "cilium" || cni == "cniv1" || cni == "cniv2" || cni == "dualstack"
-	case "windows":
+	case windowsOS:
 		return cni == "cniv1" || cni == "cniv2" || cni == "stateless"
 	default:
 		return false
@@ -145,23 +155,27 @@ func (cfg faultConfig) scenarios() ([]scenario, error) {
 		scenarioRestartDuringScale:
 		return []scenario{cfg.Scenario}, nil
 	default:
-		return nil, fmt.Errorf("unsupported migration fault scenario %q", cfg.Scenario)
+		return nil, fmt.Errorf("%w: unsupported scenario %q", errInvalidFaultConfig, cfg.Scenario)
 	}
 }
 
 func faultPointForScenario(value scenario) string {
 	switch value {
+	case scenarioAll,
+		scenarioAddBeforeEndpointCommit,
+		scenarioRestartDuringScale:
+		return faultPointAddBeforeEndpoint
 	case scenarioDeleteAfterIntentCommit:
 		return faultPointDeleteAfterIntent
 	case scenarioEndpointPatch:
 		return faultPointPatchBeforeEndpoint
-	default:
-		return faultPointAddBeforeEndpoint
 	}
+	return faultPointAddBeforeEndpoint
 }
 
-func cnsDaemonSetForOS(osName string) (string, string) {
-	if osName == "windows" {
+//nolint:unused // Used by the load-tagged migration fault integration test.
+func cnsDaemonSetForOS(osName string) (daemonSetName, labelSelector string) {
+	if osName == windowsOS {
 		return windowsCNSDaemonSet, windowsCNSLabelSelector
 	}
 	return linuxCNSDaemonSet, linuxCNSLabelSelector
@@ -204,15 +218,16 @@ func validateMigrationCNSConfig(raw []byte) error {
 	if err := json.Unmarshal(raw, &config); err != nil {
 		return fmt.Errorf("decoding CNS config: %w", err)
 	}
-	if strings.ToLower(config.StateStoreBackend) != "bolt" {
-		return fmt.Errorf("state store backend must be bolt, got %q", config.StateStoreBackend)
+	if !strings.EqualFold(config.StateStoreBackend, boltBackend) {
+		return fmt.Errorf("%w: state store backend must be %s, got %q", errInvalidFaultConfig, boltBackend, config.StateStoreBackend)
 	}
 	if !config.ManageEndpointState {
-		return fmt.Errorf("managed endpoint state must be enabled")
+		return fmt.Errorf("%w: managed endpoint state must be enabled", errInvalidFaultConfig)
 	}
 	return nil
 }
 
+//nolint:unused // Used by the load-tagged migration fault integration test.
 func findCNSContainer(containers []corev1.Container) (int, error) {
 	for i := range containers {
 		for _, port := range containers[i].Ports {
@@ -228,7 +243,7 @@ func findCNSContainer(containers []corev1.Container) (int, error) {
 			}
 		}
 	}
-	return -1, fmt.Errorf("container exposing the CNS API was not found")
+	return -1, errCNSContainerMissing
 }
 
 func setContainerEnv(container *corev1.Container, name, value string) envBackup {
@@ -274,7 +289,7 @@ func selectCNSTarget(pods []corev1.Pod, nodeName string) (corev1.Pod, error) {
 		}
 	}
 	if selected == nil {
-		return corev1.Pod{}, fmt.Errorf("no ready CNS pod found")
+		return corev1.Pod{}, errNoReadyCNSPod
 	}
 	return *selected.DeepCopy(), nil
 }

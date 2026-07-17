@@ -775,12 +775,17 @@ stages:
       - win22_cniv1_HNS
       - linux_cniv1
       - linux_podsubnet
+      - linux_podsubnet_bolt
       - linux_overlay
+      - linux_overlay_bolt
       - mariner_linux_overlay
       - arm_linux_overlay
       - rdma_linux_overlay
       - windows_podsubnet_HNS
+      - windows_podsubnet_bolt_HNS
       - windows_overlay_HNS
+      - cilium_overlay_bolt
+      - cilium_overlay_bolt_rollback
       - setup
       - ${{if eq(parameters.upgradeScenario, true)}}:
         - cilium_overlay_upgrade
@@ -828,9 +833,13 @@ stages:
                 - win22-cniv1
                 - linux-cniv1
                 - linux-podsub
+                - linux-podsub-bolt
                 - linux-over
+                - linux-over-bolt
                 - mariner-over
                 - arm-over
                 - rdma-over
                 - w22-podsub
+                - w22-podsub-bolt
                 - w22-over
+                - cilium-over-bolt

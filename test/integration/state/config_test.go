@@ -1,3 +1,4 @@
+//nolint:goconst // Repeated environment values keep table cases self-contained.
 package state
 
 import (

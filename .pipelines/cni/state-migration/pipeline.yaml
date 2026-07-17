@@ -34,12 +34,9 @@ parameters:
   - name: expectedSchemaVersion
     type: number
     default: 1
-  # Reserved for the reusable migration fault template being developed in
-  # parallel. Enabling it before that template is wired fails loudly at the
-  # restart-during-scale hook instead of silently omitting required coverage.
   - name: enableFaultInjectionHooks
     type: boolean
-    default: false
+    default: true
 
 stages:
   - stage: setup

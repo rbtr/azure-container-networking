@@ -201,15 +201,16 @@ steps:
             '{daemonsetGenerationBefore: $beforeGeneration, daemonsetGenerationAfter: $afterGeneration, restartCount: 1}' \
             >"$evidenceDir/restart.json"
 
-  # Hook point for the reusable migration fault-injection template. Until that
-  # template is integrated, opting in fails loudly instead of silently skipping
-  # required ADD/DEL/PATCH/scale fault coverage.
   - ${{ if and(eq(parameters.action, 'restart-during-scale'), eq(parameters.enableFaultInjectionHooks, true)) }}:
-    - bash: |
-        echo "fault injection hooks were requested, but the reusable template is not present in this branch"
-        echo "wire the migration fault template here with lane/os/cni/clusterName parameters after cherry-pick"
-        exit 1
-      displayName: Require reusable migration fault hooks
+    - template: ../load-test-templates/migration-fault-injection-template.yaml
+      parameters:
+        clusterName: ${{ parameters.clusterName }}
+        os: ${{ parameters.os }}
+        cni: ${{ parameters.cni }}
+        scenario: all
+        scaleReplicas: ${{ parameters.replicasPerNode }}
+        runID: "$(Build.BuildId)-${{ parameters.lane }}-${{ parameters.transition }}-$(System.JobAttempt)"
+        artifactName: "migration-fault-${{ parameters.lane }}-${{ parameters.transition }}"
 
   - ${{ if and(eq(parameters.action, 'restart-during-scale'), eq(parameters.enableFaultInjectionHooks, false)) }}:
     - task: AzureCLI@2
