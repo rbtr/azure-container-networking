@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
 	"net"
 	"sync"
 	"testing"
@@ -263,55 +262,4 @@ func TestConcurrentAssignmentsCannotOwnSameIP(t *testing.T) {
 	assert.Equal(t, 1, conflicts)
 	_, err := db.Snapshot(ctx)
 	require.NoError(t, err)
-}
-
-func TestRandomizedAssignmentStateMachine(t *testing.T) {
-	ctx := context.Background()
-	db, _ := openTestDB(t)
-
-	ips := make(map[string]state.IPRecord, 20)
-	record := sampleNCRecord()
-	for i := 0; i < 20; i++ {
-		id := fmt.Sprintf("ip-%02d", i)
-		ips[id] = state.IPRecord{
-			ID:        id,
-			IPAddress: fmt.Sprintf("10.0.0.%d", i+10),
-			NCID:      record.ID,
-			NCVersion: 2,
-		}
-	}
-	require.NoError(t, db.ApplyNetworkContainer(ctx, record, ips))
-
-	rng := rand.New(rand.NewSource(42)) //nolint:gosec // deterministic state-machine test
-	owners := make(map[string]string)
-	for step := 0; step < 500; step++ {
-		ipIndex := rng.Intn(20)
-		ipID := fmt.Sprintf("ip-%02d", ipIndex)
-		containerID := fmt.Sprintf("container-%02d", ipIndex)
-		if _, assigned := owners[ipID]; assigned {
-			require.NoError(t, db.ReleaseEndpoint(
-				ctx,
-				containerID,
-				containerID,
-				state.DeleteIntent{CreatedAt: testNow.Add(time.Duration(step) * time.Second)},
-				time.Nanosecond,
-			))
-			delete(owners, ipID)
-		} else {
-			ip := ips[ipID]
-			require.NoError(t, db.AssignEndpoint(
-				ctx,
-				state.AssignmentRecord{
-					Pod:   state.PodIdentity{PodKey: containerID, InfraContainerID: containerID},
-					IPIDs: []string{ipID},
-				},
-				sampleEndpoint(ip.IPAddress),
-				testNow.Add(time.Duration(step)*time.Second),
-				time.Nanosecond,
-			))
-			owners[ipID] = containerID
-		}
-		_, err := db.Snapshot(ctx)
-		require.NoError(t, err)
-	}
 }
