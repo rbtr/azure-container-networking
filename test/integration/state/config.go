@@ -146,20 +146,30 @@ func supportedCNI(osName, cni string) bool {
 func (cfg faultConfig) scenarios() ([]scenario, error) {
 	switch cfg.Scenario {
 	case scenarioAll:
-		return []scenario{
+		scenarios := []scenario{
 			scenarioAddBeforeEndpointCommit,
 			scenarioDeleteAfterIntentCommit,
-			scenarioEndpointPatch,
-			scenarioRestartDuringScale,
-		}, nil
+		}
+		if supportsEndpointPatch(cfg.CNI) {
+			scenarios = append(scenarios, scenarioEndpointPatch)
+		}
+		return append(scenarios, scenarioRestartDuringScale), nil
+	case scenarioEndpointPatch:
+		if !supportsEndpointPatch(cfg.CNI) {
+			return nil, fmt.Errorf("%w: scenario %q is unsupported for CNI %q", errInvalidFaultConfig, cfg.Scenario, cfg.CNI)
+		}
+		return []scenario{cfg.Scenario}, nil
 	case scenarioAddBeforeEndpointCommit,
 		scenarioDeleteAfterIntentCommit,
-		scenarioEndpointPatch,
 		scenarioRestartDuringScale:
 		return []scenario{cfg.Scenario}, nil
 	default:
 		return nil, fmt.Errorf("%w: unsupported scenario %q", errInvalidFaultConfig, cfg.Scenario)
 	}
+}
+
+func supportsEndpointPatch(cni string) bool {
+	return cni == "stateless"
 }
 
 func faultPointForScenario(value scenario) string {

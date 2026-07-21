@@ -61,6 +61,17 @@ func TestLoadFaultConfig(t *testing.T) {
 			wantErr: "unsupported CNI",
 		},
 		{
+			name: "endpoint patch unsupported for Cilium",
+			env: map[string]string{
+				envFaultScenario:    string(scenarioEndpointPatch),
+				envFaultCNI:         "cilium",
+				envFaultRunID:       "build-123",
+				envFaultArtifactDir: "artifacts",
+				envValidateBackend:  "bolt",
+			},
+			wantErr: `scenario "endpoint-patch" is unsupported for CNI "cilium"`,
+		},
+		{
 			name: "non bolt backend",
 			env: map[string]string{
 				envFaultRunID:       "build-123",
@@ -104,15 +115,40 @@ func TestLoadFaultConfig(t *testing.T) {
 }
 
 func TestScenarioContract(t *testing.T) {
-	cfg := faultConfig{Scenario: scenarioAll}
-	scenarios, err := cfg.scenarios()
-	require.NoError(t, err)
-	require.Equal(t, []scenario{
-		scenarioAddBeforeEndpointCommit,
-		scenarioDeleteAfterIntentCommit,
-		scenarioEndpointPatch,
-		scenarioRestartDuringScale,
-	}, scenarios)
+	tests := []struct {
+		name string
+		cni  string
+		want []scenario
+	}{
+		{
+			name: "Cilium excludes stateless endpoint patch",
+			cni:  "cilium",
+			want: []scenario{
+				scenarioAddBeforeEndpointCommit,
+				scenarioDeleteAfterIntentCommit,
+				scenarioRestartDuringScale,
+			},
+		},
+		{
+			name: "stateless includes endpoint patch",
+			cni:  "stateless",
+			want: []scenario{
+				scenarioAddBeforeEndpointCommit,
+				scenarioDeleteAfterIntentCommit,
+				scenarioEndpointPatch,
+				scenarioRestartDuringScale,
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := faultConfig{Scenario: scenarioAll, CNI: test.cni}
+			scenarios, err := cfg.scenarios()
+			require.NoError(t, err)
+			require.Equal(t, test.want, scenarios)
+		})
+	}
+
 	require.Equal(t, faultPointAddBeforeEndpoint, faultPointForScenario(scenarioRestartDuringScale))
 	require.Equal(t, faultPointDeleteAfterIntent, faultPointForScenario(scenarioDeleteAfterIntentCommit))
 	require.Equal(t, faultPointPatchBeforeEndpoint, faultPointForScenario(scenarioEndpointPatch))
