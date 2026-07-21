@@ -237,7 +237,7 @@ stages:
               expectedAuthority: ${{ parameters.expectedAuthority }}
               expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
               baselineArtifact: state-migration-${{ parameters.name }}-04-restart-during-scale
-              stateRelation: changed
+              stateRelation: none
               bootRelation: changed
 
       - job: os_validation
