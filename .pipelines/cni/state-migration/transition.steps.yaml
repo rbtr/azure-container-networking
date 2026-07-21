@@ -341,6 +341,20 @@ steps:
           else
             deployment=load-test
           fi
+
+          kubectl get pods -n load-test -l load-test=true -o json |
+            jq '[.items[]
+              | {
+                  name: .metadata.name,
+                  phase: .status.phase,
+                  ready: any(.status.conditions[]?; .type == "Ready" and .status == "True")
+                }
+              | select(.phase != "Running" or .ready != true)
+            ]' >"$evidenceDir/workload-pods-recreated.json"
+          mapfile -t stalePods < <(jq -r '.[].name' "$evidenceDir/workload-pods-recreated.json")
+          if (( ${#stalePods[@]} > 0 )); then
+            kubectl delete pod -n load-test "${stalePods[@]}" --wait=false
+          fi
           kubectl rollout status deployment "$deployment" -n load-test --timeout=30m
 
           jq -e -n \
