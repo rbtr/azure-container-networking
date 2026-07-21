@@ -196,92 +196,44 @@ func (v *Validator) validateIPs(ctx context.Context, stateCheck check) error {
 	for index := range nodes.Items {
 		nodeName := nodes.Items[index].Name
 		started := time.Now()
-		attempts := 0
-		converged := false
 		var comparison ipComparisonResult
 		var persistentDetails persistentStateDetails
-		var persistentValidationErr error
-		var observationErr error
-
-		for attempt := 1; attempt <= maxAttempts; attempt++ {
-			attempts = attempt
+		attempts, converged, validationErr := runValidationAttempts(ctx, maxAttempts, retryInterval, func() (bool, error) {
+			comparison = ipComparisonResult{}
+			persistentDetails = persistentStateDetails{}
 
 			pod, err := acnk8s.GetPodsByNode(ctx, v.clientset, namespace, labelSelector, nodeName)
 			if err != nil {
-				observationErr = errors.Wrap(err, "failed to get privileged pod")
-				retry, retryErr := waitForValidationRetry(ctx, attempt, maxAttempts, retryInterval)
-				if retryErr != nil {
-					return errors.Wrap(retryErr, "waiting to retry state validation")
-				}
-				if retry {
-					continue
-				}
-				break
+				return false, errors.Wrap(err, "failed to get privileged pod")
 			}
 			if len(pod.Items) == 0 {
-				observationErr = errors.Errorf("there are no privileged pods on node - %v", nodeName)
-				retry, retryErr := waitForValidationRetry(ctx, attempt, maxAttempts, retryInterval)
-				if retryErr != nil {
-					return errors.Wrap(retryErr, "waiting to retry state validation")
-				}
-				if retry {
-					continue
-				}
-				break
+				return false, errors.Errorf("there are no privileged pods on node - %v", nodeName)
 			}
 			podName := pod.Items[0].Name
 
 			log.Printf("Executing command %s on pod %s, container %s", cmd, podName, containerName)
 			result, _, err := acnk8s.ExecCmdOnPod(ctx, v.clientset, namespace, podName, containerName, cmd, v.config, true)
 			if err != nil {
-				observationErr = errors.Wrapf(err, "failed to exec into privileged pod - %s", podName)
-				retry, retryErr := waitForValidationRetry(ctx, attempt, maxAttempts, retryInterval)
-				if retryErr != nil {
-					return errors.Wrap(retryErr, "waiting to retry state validation")
-				}
-				if retry {
-					continue
-				}
-				break
+				return false, errors.Wrapf(err, "failed to exec into privileged pod - %s", podName)
 			}
 
 			filePodIps, err := stateCheck.stateFileIPs(result)
 			if err != nil {
-				observationErr = errors.Wrapf(err, "failed to get pod ips from state file on node %v", nodeName)
-				retry, retryErr := waitForValidationRetry(ctx, attempt, maxAttempts, retryInterval)
-				if retryErr != nil {
-					return errors.Wrap(retryErr, "waiting to retry state validation")
-				}
-				if retry {
-					continue
-				}
-				break
+				return false, errors.Wrapf(err, "failed to get pod ips from state file on node %v", nodeName)
 			}
-			observationErr = nil
 			if stateCheck.persistentState {
 				details, inspectErr := inspectPersistentState(result)
 				persistentDetails = details
 				if inspectErr != nil {
-					persistentValidationErr = errors.Wrapf(
+					return false, errors.Wrapf(
 						inspectErr,
 						"failed to validate persistent state on node %v",
 						nodeName,
 					)
-					retry, retryErr := waitForValidationRetry(ctx, attempt, maxAttempts, retryInterval)
-					if retryErr != nil {
-						return errors.Wrap(retryErr, "waiting to retry persistent state validation")
-					}
-					if retry {
-						continue
-					}
-					break
 				}
-				persistentValidationErr = nil
 			}
 			if stateCheck.metadataOnly {
-				comparison = ipComparisonResult{}
-				converged = true
-				break
+				return true, nil
 			}
 			podIps := getPodIPsWithoutNodeIP(ctx, v.clientset, nodes.Items[index])
 			// include IPs from Cilium internal endpoints (reserved:ingress) that are not real K8s pods.
@@ -290,16 +242,8 @@ func (v *Validator) validateIPs(ctx context.Context, stateCheck check) error {
 				podIps = append(podIps, getCiliumInternalEndpointIPs(ctx, v.clientset, v.config, nodeName)...)
 			}
 			comparison = compareIPsDetailed(filePodIps, podIps)
-			if !comparison.HasMismatch() {
-				converged = true
-				break
-			}
-
-			_, retryErr := waitForValidationRetry(ctx, attempt, maxAttempts, retryInterval)
-			if retryErr != nil {
-				return errors.Wrap(retryErr, "waiting to retry state convergence")
-			}
-		}
+			return !comparison.HasMismatch(), nil
+		})
 
 		var dbFilePresent *bool
 		var dbFileSizeBytes *int64
@@ -320,7 +264,7 @@ func (v *Validator) validateIPs(ctx context.Context, stateCheck check) error {
 			MissingIPs:      comparison.MissingIPs,
 			UnexpectedIPs:   comparison.UnexpectedIPs,
 			DuplicateIPs:    comparison.DuplicateIPs,
-			ValidationPass:  persistentValidationErr == nil && converged && !comparison.HasMismatch(),
+			ValidationPass:  validationErr == nil && converged && !comparison.HasMismatch(),
 			StateBackend:    persistentDetails.Backend,
 			DBFilePresent:   dbFilePresent,
 			DBFileSizeBytes: dbFileSizeBytes,
@@ -334,11 +278,8 @@ func (v *Validator) validateIPs(ctx context.Context, stateCheck check) error {
 			TombstoneCount:  persistentDetails.TombstoneCount,
 		})
 
-		if persistentValidationErr != nil {
-			return persistentValidationErr
-		}
-		if observationErr != nil {
-			return observationErr
+		if validationErr != nil {
+			return validationErr
 		}
 		if !converged || comparison.HasMismatch() {
 			return errors.Errorf(
@@ -357,6 +298,37 @@ func (v *Validator) validateIPs(ctx context.Context, stateCheck check) error {
 	}
 	log.Printf("State file validation for %s passed", checkType)
 	return nil
+}
+
+func runValidationAttempts(
+	ctx context.Context,
+	maxAttempts int,
+	interval time.Duration,
+	validate func() (bool, error),
+) (int, bool, error) {
+	if maxAttempts < 1 {
+		return 0, false, errors.New("validation attempts must be positive")
+	}
+
+	var lastErr error
+	for attempt := 1; ; attempt++ {
+		converged, err := validate()
+		if converged {
+			if err != nil {
+				return attempt, false, err
+			}
+			return attempt, true, nil
+		}
+		lastErr = err
+
+		retry, retryErr := waitForValidationRetry(ctx, attempt, maxAttempts, interval)
+		if retryErr != nil {
+			return attempt, false, errors.Wrap(retryErr, "waiting to retry state validation")
+		}
+		if !retry {
+			return attempt, false, lastErr
+		}
+	}
 }
 
 func waitForValidationRetry(ctx context.Context, attempt, maxAttempts int, interval time.Duration) (bool, error) {
