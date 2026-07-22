@@ -276,6 +276,13 @@ steps:
           evidenceDir="$(Build.SourcesDirectory)/test/integration/logs/state-migration/${{ parameters.lane }}/${{ parameters.transition }}"
           make -C ./hack/aks set-kubeconf AZCLI=az CLUSTER=${{ parameters.clusterName }}
 
+          if [[ "${{ parameters.os }}" == "windows" ]]; then
+            (
+              cd hack/scripts
+              bash patch-kubeclusterconfig.sh || true
+            )
+          fi
+
           kubectl get nodes -l kubernetes.io/os=${{ parameters.os }} -o json |
             jq '[.items[] | {nodeName: .metadata.name, bootID: .status.nodeInfo.bootID}] | sort_by(.nodeName)' \
             >"$evidenceDir/node-boots-before.json"
