@@ -25,6 +25,7 @@ steps:
     - task: AzureCLI@2
       displayName: Capture strict persistent debug responses
       condition: always()
+      retryCountOnTaskFailure: 2
       inputs:
         azureSubscription: $(BUILD_VALIDATIONS_SERVICE_CONNECTION)
         scriptLocation: inlineScript
