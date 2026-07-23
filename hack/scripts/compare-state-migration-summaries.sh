@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-if [[ $# -ne 9 ]]; then
-	echo "usage: $0 <baseline> <candidate> <expected-backend> <expected-authority> <expected-schema> <state-relation> <boot-relation> <baseline-pod-state> <candidate-pod-state>" >&2
+if [[ $# -ne 10 ]]; then
+	echo "usage: $0 <baseline> <candidate> <expected-backend> <expected-authority> <expected-schema> <state-relation> <boot-relation> <pod-relation> <baseline-pod-state> <candidate-pod-state>" >&2
 	exit 2
 fi
 
@@ -14,8 +14,9 @@ expected_authority=$4
 expected_schema=$5
 state_relation=$6
 boot_relation=$7
-baseline_pod_state=$8
-candidate_pod_state=$9
+pod_relation=$8
+baseline_pod_state=$9
+candidate_pod_state=${10}
 
 for artifact in "$baseline" "$candidate" "$baseline_pod_state" "$candidate_pod_state"; do
 	if [[ ! -s "$artifact" ]]; then
@@ -44,6 +45,17 @@ case "$boot_relation" in
 none | same | changed) ;;
 *)
 	echo "unsupported boot relation: $boot_relation" >&2
+	exit 2
+	;;
+esac
+
+if [[ "$pod_relation" == "inherit" ]]; then
+	pod_relation=$state_relation
+fi
+case "$pod_relation" in
+none | exact | changed) ;;
+*)
+	echo "unsupported pod relation: $pod_relation" >&2
 	exit 2
 	;;
 esac
@@ -90,8 +102,6 @@ fi
 if ! jq -e -n \
 	--slurpfile baseline "$baseline" \
 	--slurpfile candidate "$candidate" \
-	--slurpfile baselinePods "$baseline_pod_state" \
-	--slurpfile candidatePods "$candidate_pod_state" \
 	--arg relation "$state_relation" '
 	def normalized_state($summary):
 		[
@@ -108,6 +118,25 @@ if ! jq -e -n \
 			}
 		]
 		| sort_by(.checkName, .nodeName);
+
+	(normalized_state($baseline[0])) as $before
+	| (normalized_state($candidate[0])) as $after
+	| if $relation == "none" then
+		true
+	elif $relation == "exact" then
+		$before == $after
+	else
+		$before != $after
+	end
+' >/dev/null; then
+	echo "state relation '$state_relation' failed between $baseline and $candidate" >&2
+	exit 1
+fi
+
+if ! jq -e -n \
+	--slurpfile baselinePods "$baseline_pod_state" \
+	--slurpfile candidatePods "$candidate_pod_state" \
+	--arg relation "$pod_relation" '
 	def normalized_pods($pods):
 		[
 			$pods[]
@@ -121,24 +150,20 @@ if ! jq -e -n \
 		]
 		| sort_by(.namespace, .name);
 
-	(normalized_state($baseline[0])) as $before
-	| (normalized_state($candidate[0])) as $after
-	| (normalized_pods($baselinePods[0])) as $beforePods
-	| (normalized_pods($candidatePods[0])) as $afterPods
+	(normalized_pods($baselinePods[0])) as $before
+	| (normalized_pods($candidatePods[0])) as $after
 	| if $relation == "none" then
 		true
 	elif $relation == "exact" then
-		$before == $after
-		and ($beforePods | length) > 0
-		and $beforePods == $afterPods
+		($before | length) > 0
+		and $before == $after
 	else
-		($beforePods | length) > 0
-		and ($afterPods | length) > 0
-		and $beforePods != $afterPods
+		($before | length) > 0
+		and ($after | length) > 0
 		and $before != $after
 	end
 ' >/dev/null; then
-	echo "state relation '$state_relation' failed between $baseline and $candidate" >&2
+	echo "pod relation '$pod_relation' failed between $baseline_pod_state and $candidate_pod_state" >&2
 	exit 1
 fi
 
@@ -179,6 +204,7 @@ jq -n \
 	--arg expectedBackend "$expected_backend" \
 	--arg stateRelation "$state_relation" \
 	--arg bootRelation "$boot_relation" \
+	--arg podRelation "$pod_relation" \
 	'{
 		baseline: $baseline,
 		candidate: $candidate,
@@ -187,5 +213,6 @@ jq -n \
 		expectedBackend: $expectedBackend,
 		stateRelation: $stateRelation,
 		bootRelation: $bootRelation,
+		podRelation: $podRelation,
 		result: "pass"
 	}'

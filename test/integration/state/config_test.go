@@ -202,7 +202,7 @@ func TestValidateMigrationCNSConfig(t *testing.T) {
 	}{
 		{
 			name: "valid",
-			raw:  `{"StateStoreBackend":"bolt","ManageEndpointState":true}`,
+			raw:  `{"StateStoreBackend":"bolt","ManageEndpointState":true,"InitializeFromCNI":false}`,
 		},
 		{
 			name:    "wrong backend",
@@ -213,6 +213,11 @@ func TestValidateMigrationCNSConfig(t *testing.T) {
 			name:    "endpoint state disabled",
 			raw:     `{"StateStoreBackend":"bolt","ManageEndpointState":false}`,
 			wantErr: "managed endpoint state must be enabled",
+		},
+		{
+			name:    "CNI initialization enabled",
+			raw:     `{"StateStoreBackend":"bolt","ManageEndpointState":true,"InitializeFromCNI":true}`,
+			wantErr: "CNI state initialization must be disabled",
 		},
 	}
 

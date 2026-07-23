@@ -142,6 +142,7 @@ stages:
       daemonsetName: azure-cns
       manageEndpointState: "true"
       initializeFromCNI: "false"
+      enableStateMigration: "false"
       expectedAuthority: bolt
       expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
       enableFaultInjectionHooks: ${{ parameters.enableFaultInjectionHooks }}
@@ -168,6 +169,7 @@ stages:
       daemonsetName: azure-cns
       manageEndpointState: "false"
       initializeFromCNI: "true"
+      enableStateMigration: "false"
       expectedAuthority: bolt
       expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
       enableFaultInjectionHooks: false
@@ -194,6 +196,7 @@ stages:
       daemonsetName: azure-cns
       manageEndpointState: "false"
       initializeFromCNI: "true"
+      enableStateMigration: "false"
       expectedAuthority: bolt
       expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
       enableFaultInjectionHooks: false
@@ -201,7 +204,7 @@ stages:
   - template: lane.stage.yaml
     parameters:
       name: windows_podsubnet
-      displayName: "P0 Windows Azure CNI pod-subnet — CNI-managed"
+      displayName: "P0 Windows Azure CNI pod-subnet — CNI-managed + ownership handoff"
       clusterBaseName: mig-podsub-win
       clusterType: swift-byocni-up
       scenario: azure-cni-pod-subnet
@@ -220,9 +223,11 @@ stages:
       daemonsetName: azure-cns-win
       manageEndpointState: "false"
       initializeFromCNI: "true"
+      enableStateMigration: "false"
       expectedAuthority: bolt
       expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
       enableFaultInjectionHooks: false
+      enableOwnershipHandoff: true
 
   - template: lane.stage.yaml
     parameters:
@@ -246,6 +251,7 @@ stages:
       daemonsetName: azure-cns-win
       manageEndpointState: "true"
       initializeFromCNI: "false"
+      enableStateMigration: "false"
       expectedAuthority: bolt
       expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
       enableFaultInjectionHooks: ${{ parameters.enableFaultInjectionHooks }}
@@ -265,5 +271,5 @@ stages:
           name: $(BUILD_POOL_NAME_DEFAULT)
         steps:
           - bash: |
-              echo "All five P0 state-migration lifecycle lanes passed."
+              echo "All five P0 lifecycle lanes and the representative Windows ownership handoff passed."
             displayName: Confirm release gate

@@ -15,6 +15,8 @@ parameters:
     type: string
   - name: initializeFromCNI
     type: string
+  - name: enableStateMigration
+    type: string
 
 steps:
   - ${{ if eq(parameters.scenario, 'cilium-overlay') }}:
@@ -110,7 +112,10 @@ steps:
         jq -e \
           --argjson manage "${{ parameters.manageEndpointState }}" \
           --argjson initialize "${{ parameters.initializeFromCNI }}" \
-          '.ManageEndpointState == $manage and .InitializeFromCNI == $initialize' \
+          --argjson migrate "${{ parameters.enableStateMigration }}" \
+          '.ManageEndpointState == $manage
+            and .InitializeFromCNI == $initialize
+            and .EnableStateMigration == $migrate' \
           <<<"$config"
 
         kubectl get pods -A -o wide

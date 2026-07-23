@@ -39,11 +39,16 @@ parameters:
     type: string
   - name: initializeFromCNI
     type: string
+  - name: enableStateMigration
+    type: string
   - name: expectedAuthority
     type: string
   - name: expectedSchemaVersion
     type: number
   - name: enableFaultInjectionHooks
+    type: boolean
+    default: false
+  - name: enableOwnershipHandoff
     type: boolean
     default: false
 
@@ -119,6 +124,7 @@ stages:
               daemonsetName: ${{ parameters.daemonsetName }}
               manageEndpointState: ${{ parameters.manageEndpointState }}
               initializeFromCNI: ${{ parameters.initializeFromCNI }}
+              enableStateMigration: ${{ parameters.enableStateMigration }}
 
       - job: json_baseline
         displayName: 01 JSON baseline
@@ -140,6 +146,9 @@ stages:
               expectedBackend: json
               expectedAuthority: ${{ parameters.expectedAuthority }}
               expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
+              expectedManageEndpointState: ${{ parameters.manageEndpointState }}
+              expectedInitializeFromCNI: ${{ parameters.initializeFromCNI }}
+              expectedEnableStateMigration: ${{ parameters.enableStateMigration }}
 
       - job: bolt_migrate
         displayName: 02 Single-restart Bolt migration
@@ -161,6 +170,9 @@ stages:
               expectedBackend: bolt
               expectedAuthority: ${{ parameters.expectedAuthority }}
               expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
+              expectedManageEndpointState: ${{ parameters.manageEndpointState }}
+              expectedInitializeFromCNI: ${{ parameters.initializeFromCNI }}
+              expectedEnableStateMigration: ${{ parameters.enableStateMigration }}
               baselineArtifact: state-migration-${{ parameters.name }}-01-json-baseline
               stateRelation: exact
 
@@ -184,6 +196,9 @@ stages:
               expectedBackend: bolt
               expectedAuthority: ${{ parameters.expectedAuthority }}
               expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
+              expectedManageEndpointState: ${{ parameters.manageEndpointState }}
+              expectedInitializeFromCNI: ${{ parameters.initializeFromCNI }}
+              expectedEnableStateMigration: ${{ parameters.enableStateMigration }}
               baselineArtifact: state-migration-${{ parameters.name }}-02-bolt-migrate
               stateRelation: exact
               bootRelation: same
@@ -208,6 +223,9 @@ stages:
               expectedBackend: bolt
               expectedAuthority: ${{ parameters.expectedAuthority }}
               expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
+              expectedManageEndpointState: ${{ parameters.manageEndpointState }}
+              expectedInitializeFromCNI: ${{ parameters.initializeFromCNI }}
+              expectedEnableStateMigration: ${{ parameters.enableStateMigration }}
               baselineArtifact: state-migration-${{ parameters.name }}-03-same-boot-restart
               ${{ if eq(parameters.enableFaultInjectionHooks, true) }}:
                 stateRelation: exact
@@ -236,6 +254,9 @@ stages:
               expectedBackend: bolt
               expectedAuthority: ${{ parameters.expectedAuthority }}
               expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
+              expectedManageEndpointState: ${{ parameters.manageEndpointState }}
+              expectedInitializeFromCNI: ${{ parameters.initializeFromCNI }}
+              expectedEnableStateMigration: ${{ parameters.enableStateMigration }}
               baselineArtifact: state-migration-${{ parameters.name }}-04-restart-during-scale
               stateRelation: none
               bootRelation: changed
@@ -260,6 +281,9 @@ stages:
               expectedBackend: bolt
               expectedAuthority: ${{ parameters.expectedAuthority }}
               expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
+              expectedManageEndpointState: ${{ parameters.manageEndpointState }}
+              expectedInitializeFromCNI: ${{ parameters.initializeFromCNI }}
+              expectedEnableStateMigration: ${{ parameters.enableStateMigration }}
               baselineArtifact: state-migration-${{ parameters.name }}-05-node-reboot
               stateRelation: exact
               bootRelation: same
@@ -284,6 +308,9 @@ stages:
               expectedBackend: json
               expectedAuthority: ${{ parameters.expectedAuthority }}
               expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
+              expectedManageEndpointState: ${{ parameters.manageEndpointState }}
+              expectedInitializeFromCNI: ${{ parameters.initializeFromCNI }}
+              expectedEnableStateMigration: ${{ parameters.enableStateMigration }}
               baselineArtifact: state-migration-${{ parameters.name }}-06-os-validation
               stateRelation: exact
 
@@ -307,6 +334,9 @@ stages:
               expectedBackend: json
               expectedAuthority: ${{ parameters.expectedAuthority }}
               expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
+              expectedManageEndpointState: ${{ parameters.manageEndpointState }}
+              expectedInitializeFromCNI: ${{ parameters.initializeFromCNI }}
+              expectedEnableStateMigration: ${{ parameters.enableStateMigration }}
               baselineArtifact: state-migration-${{ parameters.name }}-07-rollback-json
               stateRelation: changed
 
@@ -330,6 +360,9 @@ stages:
               expectedBackend: bolt
               expectedAuthority: ${{ parameters.expectedAuthority }}
               expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
+              expectedManageEndpointState: ${{ parameters.manageEndpointState }}
+              expectedInitializeFromCNI: ${{ parameters.initializeFromCNI }}
+              expectedEnableStateMigration: ${{ parameters.enableStateMigration }}
               baselineArtifact: state-migration-${{ parameters.name }}-08-json-mutation
               stateRelation: exact
 
@@ -353,9 +386,25 @@ stages:
               expectedBackend: bolt
               expectedAuthority: ${{ parameters.expectedAuthority }}
               expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
+              expectedManageEndpointState: ${{ parameters.manageEndpointState }}
+              expectedInitializeFromCNI: ${{ parameters.initializeFromCNI }}
+              expectedEnableStateMigration: ${{ parameters.enableStateMigration }}
               baselineArtifact: state-migration-${{ parameters.name }}-09-bolt-reimport
               stateRelation: exact
               bootRelation: same
+
+      - ${{ if eq(parameters.enableOwnershipHandoff, true) }}:
+        - template: handoff.jobs.yaml
+          parameters:
+            lane: ${{ parameters.name }}
+            clusterName: ${{ parameters.clusterBaseName }}-$(commitID)
+            os: ${{ parameters.os }}
+            targetNodeCount: ${{ parameters.targetNodeCount }}
+            replicasPerNode: ${{ parameters.replicasPerNode }}
+            configMapName: ${{ parameters.configMapName }}
+            daemonsetName: ${{ parameters.daemonsetName }}
+            expectedAuthority: ${{ parameters.expectedAuthority }}
+            expectedSchemaVersion: ${{ parameters.expectedSchemaVersion }}
 
       - job: cleanup
         displayName: Clean up migration cluster
@@ -373,6 +422,25 @@ stages:
           - json_mutation
           - bolt_reimport
           - final_same_boot_restart
+          - ${{ if eq(parameters.enableOwnershipHandoff, true) }}:
+            - handoff_cni_json
+            - handoff_ownership_first_import
+            - handoff_ownership_first_stateless
+            - handoff_ownership_first_bolt
+            - handoff_ownership_first_stateful
+            - handoff_ownership_first_reverse
+            - handoff_backend_first_json
+            - handoff_backend_first_bolt
+            - handoff_backend_first_import
+            - handoff_backend_first_stateless
+            - handoff_backend_first_stateful
+            - handoff_backend_first_reverse
+            - handoff_direct_json
+            - handoff_direct_import
+            - handoff_direct_stateless
+            - handoff_faults
+            - handoff_restart
+            - handoff_reboot
         steps:
           - template: ../../templates/delete-cluster.yaml
             parameters:

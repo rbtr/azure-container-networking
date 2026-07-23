@@ -25,6 +25,12 @@ parameters:
     type: string
   - name: expectedSchemaVersion
     type: number
+  - name: expectedManageEndpointState
+    type: string
+  - name: expectedInitializeFromCNI
+    type: string
+  - name: expectedEnableStateMigration
+    type: string
   - name: baselineArtifact
     type: string
     default: ""
@@ -34,6 +40,9 @@ parameters:
   - name: bootRelation
     type: string
     default: none
+  - name: podRelation
+    type: string
+    default: inherit
   - name: enableFaultInjectionHooks
     type: boolean
     default: false
@@ -54,7 +63,7 @@ steps:
     displayName: Prepare transition evidence
     condition: always()
 
-  - ${{ if or(eq(parameters.action, 'json-baseline'), eq(parameters.action, 'bolt-migrate'), eq(parameters.action, 'rollback-json'), eq(parameters.action, 'bolt-reimport')) }}:
+  - ${{ if or(eq(parameters.action, 'json-baseline'), eq(parameters.action, 'bolt-migrate'), eq(parameters.action, 'rollback-json'), eq(parameters.action, 'bolt-reimport'), eq(parameters.action, 'configure-state'), eq(parameters.action, 'configure-state-import'), eq(parameters.action, 'configure-state-and-clear-endpoints')) }}:
     - task: AzureCLI@2
       displayName: Apply ${{ parameters.action }} state mode
       inputs:
@@ -71,44 +80,225 @@ steps:
           configMap="${{ parameters.configMapName }}"
           daemonset="${{ parameters.daemonsetName }}"
           action="${{ parameters.action }}"
+          effectiveCNI="${{ parameters.cni }}"
           beforeGeneration=$(kubectl get daemonset "$daemonset" -n kube-system -o jsonpath='{.metadata.generation}')
+
+          expectedCNISource=
+          if [[ "${{ parameters.os }}" == "windows" ]]; then
+            case "$effectiveCNI" in
+              cniv2)
+                expectedCNISource=azure-vnet
+                ;;
+              stateless)
+                expectedCNISource=azure-vnet-stateless
+                ;;
+              *)
+                echo "unsupported Windows CNI type: $effectiveCNI"
+                exit 1
+                ;;
+            esac
+          fi
 
           patch_config() {
             local backend=$1
             local mode=$2
+            local manageEndpointState=$3
+            local initializeFromCNI=$4
+            local enableStateMigration=$5
             local current patched payload
             current=$(kubectl get configmap "$configMap" -n kube-system -o jsonpath='{.data.cns_config\.json}')
-            patched=$(jq --arg backend "$backend" --arg mode "$mode" \
-              '.StateStoreBackend = $backend | .StateStoreMode = $mode' <<<"$current")
+            patched=$(jq \
+              --arg backend "$backend" \
+              --arg mode "$mode" \
+              --argjson manageEndpointState "$manageEndpointState" \
+              --argjson initializeFromCNI "$initializeFromCNI" \
+              --argjson enableStateMigration "$enableStateMigration" \
+              '.StateStoreBackend = $backend
+                | .StateStoreMode = $mode
+                | .ManageEndpointState = $manageEndpointState
+                | .InitializeFromCNI = $initializeFromCNI
+                | .EnableStateMigration = $enableStateMigration' \
+              <<<"$current")
             payload=$(jq -n --arg config "$patched" '{data: {"cns_config.json": $config}}')
             kubectl patch configmap "$configMap" -n kube-system --type merge -p "$payload"
           }
 
+          prepare_endpoint_import() {
+            local currentConfig alreadyApplied
+            currentConfig=$(kubectl get configmap "$configMap" -n kube-system -o jsonpath='{.data.cns_config\.json}')
+            alreadyApplied=$(jq -r \
+              --arg backend "${{ parameters.expectedBackend }}" \
+              --argjson manageEndpointState "${{ parameters.expectedManageEndpointState }}" \
+              --argjson enableStateMigration "${{ parameters.expectedEnableStateMigration }}" \
+              '.StateStoreBackend == $backend
+                and .ManageEndpointState == $manageEndpointState
+                and .EnableStateMigration == $enableStateMigration' \
+              <<<"$currentConfig")
+            if [[ "$alreadyApplied" == "true" ]]; then
+              echo "import configuration is already active; preserving imported endpoint state on replay" \
+                >"$evidenceDir/endpoint-import-precondition.txt"
+              return
+            fi
+
+            if [[ "${{ parameters.expectedBackend }}" != "json" ]]; then
+              echo "inactive Bolt endpoint state was cleared by the preceding stateful-CNI reverse" \
+                >"$evidenceDir/endpoint-import-precondition.txt"
+              return
+            fi
+
+            mapfile -t resetPods < <(
+              kubectl get pods -n kube-system -l app=privileged-daemonset,os=windows \
+                -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'
+            )
+            if (( ${#resetPods[@]} == 0 )); then
+              echo "no Windows host-process pods found to prepare JSON endpoint import"
+              exit 1
+            fi
+            : >"$evidenceDir/endpoint-import-precondition.txt"
+            for pod in "${resetPods[@]}"; do
+              node=$(kubectl get pod "$pod" -n kube-system -o jsonpath='{.spec.nodeName}')
+              kubectl exec "$pod" -n kube-system -- powershell -NoProfile -Command \
+                '$path = "C:\k\azurecns\azure-endpoints.json"; Remove-Item -Force -ErrorAction SilentlyContinue $path; if (Test-Path $path) { exit 1 }'
+              echo "$node: removed empty JSON endpoint store before CNI import" |
+                tee -a "$evidenceDir/endpoint-import-precondition.txt"
+            done
+          }
+
           restart_target() {
-            kubectl rollout restart daemonset "$daemonset" -n kube-system
+            if [[ -z "$expectedCNISource" ]]; then
+              kubectl rollout restart daemonset "$daemonset" -n kube-system
+            else
+              local daemonsetJSON installerArgs installerCount sourceCount patchedArgs payload
+              daemonsetJSON=$(kubectl get daemonset "$daemonset" -n kube-system -o json)
+              installerCount=$(jq '[.spec.template.spec.initContainers[]? | select(.name == "cni-installer")] | length' <<<"$daemonsetJSON")
+              if (( installerCount != 1 )); then
+                echo "expected exactly one cni-installer init container, found $installerCount"
+                exit 1
+              fi
+              installerArgs=$(jq -c '.spec.template.spec.initContainers[] | select(.name == "cni-installer") | .args' <<<"$daemonsetJSON")
+              sourceCount=$(jq '[.[] | select(. == "azure-vnet" or . == "azure-vnet-stateless")] | length' <<<"$installerArgs")
+              if (( sourceCount != 1 )); then
+                echo "expected exactly one stateful/stateless CNI source argument, found $sourceCount"
+                exit 1
+              fi
+              patchedArgs=$(jq -c --arg source "$expectedCNISource" \
+                'map(if . == "azure-vnet" or . == "azure-vnet-stateless" then $source else . end)' \
+                <<<"$installerArgs")
+              payload=$(jq -n \
+                --arg restartedAt "$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)" \
+                --argjson args "$patchedArgs" \
+                '{
+                  spec: {
+                    template: {
+                      metadata: {annotations: {"state-migration.azure.com/restartedAt": $restartedAt}},
+                      spec: {initContainers: [{name: "cni-installer", args: $args}]}
+                    }
+                  }
+                }')
+              kubectl patch daemonset "$daemonset" -n kube-system --type strategic -p "$payload"
+            fi
             kubectl rollout status daemonset "$daemonset" -n kube-system --timeout=20m
+          }
+
+          clear_endpoint_state() {
+            local pod
+            mapfile -t targetNodes < <(
+              kubectl get nodes -l kubernetes.io/os=${{ parameters.os }} -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'
+            )
+            mapfile -t cnsPods < <(
+              kubectl get pods -n kube-system -l k8s-app=azure-cns-win \
+                -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'
+            )
+            if (( ${#targetNodes[@]} == 0 || ${#cnsPods[@]} != ${#targetNodes[@]} )); then
+              echo "expected one Windows CNS pod per target node before clearing endpoint state" >&2
+              exit 1
+            fi
+
+            : >"$evidenceDir/cns-endpoint-reset.jsonl"
+            for pod in "${cnsPods[@]}"; do
+              kubectl exec "$pod" -n kube-system -- powershell -NoProfile -Command '
+                $uri = "http://127.0.0.1:10090"
+                $before = (Invoke-WebRequest -Uri "$uri/debug/persistentstate" -Method Post -UseBasicParsing -ErrorAction Stop).Content | ConvertFrom-Json
+                $ids = @($before.snapshot.endpoints.psobject.Properties | ForEach-Object { $_.Name })
+                foreach ($id in $ids) {
+                  $escaped = [uri]::EscapeDataString($id)
+                  $response = (Invoke-WebRequest -Uri "$uri/network/endpoints/$escaped" -Method Delete -UseBasicParsing -ErrorAction Stop).Content | ConvertFrom-Json
+                  if ($response.ReturnCode -ne 0) { throw "failed to delete stale CNS endpoint $id`: $($response.Message)" }
+                }
+                $after = (Invoke-WebRequest -Uri "$uri/debug/persistentstate" -Method Post -UseBasicParsing -ErrorAction Stop).Content | ConvertFrom-Json
+                $remaining = @($after.snapshot.endpoints.psobject.Properties | ForEach-Object { $_.Name })
+                if ($remaining.Count -ne 0) { throw "CNS endpoint records remain after stateful-CNI reverse" }
+                [pscustomobject]@{removed = $ids.Count; remaining = $remaining.Count} | ConvertTo-Json -Compress
+              ' | tee -a "$evidenceDir/cns-endpoint-reset.jsonl"
+            done
           }
 
           case "$action" in
             json-baseline)
               [[ "${{ parameters.expectedBackend }}" == "json" ]]
-              patch_config json normal
+              patch_config \
+                json \
+                normal \
+                "${{ parameters.expectedManageEndpointState }}" \
+                "${{ parameters.expectedInitializeFromCNI }}" \
+                "${{ parameters.expectedEnableStateMigration }}"
               restart_target
               expectedRestarts=1
               ;;
             bolt-migrate|bolt-reimport)
               [[ "${{ parameters.expectedBackend }}" == "bolt" ]]
-              patch_config bolt normal
+              patch_config \
+                bolt \
+                normal \
+                "${{ parameters.expectedManageEndpointState }}" \
+                "${{ parameters.expectedInitializeFromCNI }}" \
+                "${{ parameters.expectedEnableStateMigration }}"
               restart_target
               expectedRestarts=1
               ;;
             rollback-json)
               [[ "${{ parameters.expectedBackend }}" == "json" ]]
-              patch_config json rollback-to-json
+              patch_config \
+                json \
+                rollback-to-json \
+                "${{ parameters.expectedManageEndpointState }}" \
+                "${{ parameters.expectedInitializeFromCNI }}" \
+                "${{ parameters.expectedEnableStateMigration }}"
               restart_target
-              patch_config json normal
+              patch_config \
+                json \
+                normal \
+                "${{ parameters.expectedManageEndpointState }}" \
+                "${{ parameters.expectedInitializeFromCNI }}" \
+                "${{ parameters.expectedEnableStateMigration }}"
               restart_target
               expectedRestarts=2
+              ;;
+            configure-state|configure-state-and-clear-endpoints)
+              patch_config \
+                "${{ parameters.expectedBackend }}" \
+                normal \
+                "${{ parameters.expectedManageEndpointState }}" \
+                "${{ parameters.expectedInitializeFromCNI }}" \
+                "${{ parameters.expectedEnableStateMigration }}"
+              restart_target
+              if [[ "$action" == "configure-state-and-clear-endpoints" ]]; then
+                [[ "${{ parameters.expectedBackend }}" == "bolt" ]]
+                [[ "${{ parameters.expectedManageEndpointState }}" == "false" ]]
+                clear_endpoint_state
+              fi
+              expectedRestarts=1
+              ;;
+            configure-state-import)
+              prepare_endpoint_import
+              patch_config \
+                "${{ parameters.expectedBackend }}" \
+                normal \
+                "${{ parameters.expectedManageEndpointState }}" \
+                "${{ parameters.expectedInitializeFromCNI }}" \
+                "${{ parameters.expectedEnableStateMigration }}"
+              restart_target
+              expectedRestarts=1
               ;;
             *)
               echo "unsupported state mode action: $action"
@@ -123,25 +313,181 @@ steps:
             exit 1
           fi
 
+          if [[ -n "$expectedCNISource" ]]; then
+            daemonsetJSON=$(kubectl get daemonset "$daemonset" -n kube-system -o json)
+            jq -e \
+              --arg source "$expectedCNISource" '
+                [.spec.template.spec.initContainers[]? | select(.name == "cni-installer")] as $installers
+                | ($installers | length) == 1
+                and ($installers[0].args | [.[] | select(. == "azure-vnet" or . == "azure-vnet-stateless")]) == [$source]
+                and ($installers[0].args | index("/k/azurecni/bin/azure-vnet.exe")) != null
+              ' <<<"$daemonsetJSON"
+          fi
+
           config=$(kubectl get configmap "$configMap" -n kube-system -o jsonpath='{.data.cns_config\.json}')
           jq -e \
             --arg backend "${{ parameters.expectedBackend }}" \
-            '.StateStoreBackend == $backend and .StateStoreMode == "normal"' \
+            --argjson manageEndpointState "${{ parameters.expectedManageEndpointState }}" \
+            --argjson initializeFromCNI "${{ parameters.expectedInitializeFromCNI }}" \
+            --argjson enableStateMigration "${{ parameters.expectedEnableStateMigration }}" \
+            '.StateStoreBackend == $backend
+              and .StateStoreMode == "normal"
+              and .ManageEndpointState == $manageEndpointState
+              and .InitializeFromCNI == $initializeFromCNI
+              and .EnableStateMigration == $enableStateMigration' \
             <<<"$config"
 
           jq -n \
             --arg action "$action" \
             --arg backend "${{ parameters.expectedBackend }}" \
+            --argjson manageEndpointState "${{ parameters.expectedManageEndpointState }}" \
+            --argjson initializeFromCNI "${{ parameters.expectedInitializeFromCNI }}" \
+            --argjson enableStateMigration "${{ parameters.expectedEnableStateMigration }}" \
+            --arg effectiveCNI "$effectiveCNI" \
+            --arg expectedCNISource "$expectedCNISource" \
             --argjson beforeGeneration "$beforeGeneration" \
             --argjson afterGeneration "$afterGeneration" \
             --argjson restarts "$expectedRestarts" \
             '{
               action: $action,
               expectedBackend: $backend,
+              expectedManageEndpointState: $manageEndpointState,
+              expectedInitializeFromCNI: $initializeFromCNI,
+              expectedEnableStateMigration: $enableStateMigration,
+              effectiveCNI: $effectiveCNI,
+              expectedCNISource: $expectedCNISource,
               daemonsetGenerationBefore: $beforeGeneration,
               daemonsetGenerationAfter: $afterGeneration,
               restartCount: $restarts
             }' >"$evidenceDir/mode-transition.json"
+
+  - ${{ if eq(parameters.action, 'configure-state-import') }}:
+    - task: AzureCLI@2
+      displayName: Preflight imported CNS endpoint state before CNI replacement
+      inputs:
+        azureSubscription: $(BUILD_VALIDATIONS_SERVICE_CONNECTION)
+        scriptLocation: inlineScript
+        scriptType: bash
+        addSpnToEnvironment: true
+        inlineScript: |
+          set -euo pipefail
+
+          [[ "${{ parameters.os }}" == "windows" ]]
+          [[ "${{ parameters.cni }}" == "cniv2" ]]
+          evidenceDir="$(Build.SourcesDirectory)/test/integration/logs/state-migration/${{ parameters.lane }}/${{ parameters.transition }}"
+          make -C ./hack/aks set-kubeconf AZCLI=az CLUSTER=${{ parameters.clusterName }}
+
+          mapfile -t nodes < <(
+            kubectl get nodes -l kubernetes.io/os=windows \
+              -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'
+          )
+          if (( ${#nodes[@]} == 0 )); then
+            echo "no Windows nodes found for CNS endpoint import preflight"
+            exit 1
+          fi
+
+          for node in "${nodes[@]}"; do
+            nodeIPs=$(kubectl get node "$node" -o json |
+              jq -c '[.status.addresses[]? | select(.type == "InternalIP") | .address]')
+            imported=false
+            for attempt in $(seq 1 10); do
+              expected=$(kubectl get pods --all-namespaces \
+                --field-selector "spec.nodeName=$node" -o json |
+                jq -c --argjson nodeIPs "$nodeIPs" '
+                  [.items[] as $pod
+                    | select($pod.status.phase != "Succeeded" and $pod.status.phase != "Failed")
+                    | $pod.status.podIPs[]?.ip
+                    | select(. as $ip | ($nodeIPs | index($ip) | not))
+                    | {
+                        podName: $pod.metadata.name,
+                        podNamespace: $pod.metadata.namespace,
+                        ip: .
+                      }
+                  ] | unique_by(.podNamespace, .podName, .ip) | sort_by(.podNamespace, .podName, .ip)
+                ')
+
+              if [[ "${{ parameters.expectedBackend }}" == "json" ]]; then
+                statePod=$(kubectl get pods -n kube-system \
+                  -l app=privileged-daemonset,os=windows -o json |
+                  jq -r --arg node "$node" '
+                    [.items[]
+                      | select(.spec.nodeName == $node and .status.phase == "Running")
+                    ][0].metadata.name // empty
+                  ')
+                if [[ -z "$statePod" ]]; then
+                  echo "no Windows host-process state pod found on $node"
+                  exit 1
+                fi
+                state=$(kubectl exec "$statePod" -n kube-system -- powershell -NoProfile -Command \
+                  'Get-Content -Raw -ErrorAction Stop C:\k\azurecns\azure-endpoints.json')
+                actual=$(jq -c '
+                  [.Endpoints[]? as $endpoint
+                    | $endpoint.IfnameToIPMap[]?
+                    | select((.NICType // "") == "" or .NICType == "InfraNIC")
+                    | (.IPv4[]?.IP, .IPv6[]?.IP)
+                    | {
+                        podName: $endpoint.PodName,
+                        podNamespace: $endpoint.PodNamespace,
+                        ip: .
+                      }
+                  ] | sort_by(.podNamespace, .podName, .ip)
+                ' <<<"$state")
+              else
+                cnsPod=$(kubectl get pods -n kube-system -l k8s-app=azure-cns-win -o json |
+                  jq -r --arg node "$node" '
+                    [.items[]
+                      | select(.spec.nodeName == $node and .status.phase == "Running")
+                    ][0].metadata.name // empty
+                  ')
+                if [[ -z "$cnsPod" ]]; then
+                  echo "no Windows CNS pod found on $node"
+                  exit 1
+                fi
+                state=$(kubectl exec "$cnsPod" -n kube-system -- powershell -NoProfile -Command \
+                  '(Invoke-WebRequest -Uri 127.0.0.1:10090/debug/persistentstate -Method Post -UseBasicParsing -ErrorAction Stop).Content')
+                actual=$(jq -c '
+                  [.snapshot.endpoints[]? as $endpoint
+                    | $endpoint.ifnameToIPMap[]?
+                    | select((.nicType // "") == "" or .nicType == "InfraNIC")
+                    | (.ipv4[]?.IP, .ipv6[]?.IP)
+                    | {
+                        podName: $endpoint.podName,
+                        podNamespace: $endpoint.podNamespace,
+                        ip: .
+                      }
+                  ] | sort_by(.podNamespace, .podName, .ip)
+                ' <<<"$state")
+              fi
+
+              jq -n \
+                --arg node "$node" \
+                --arg backend "${{ parameters.expectedBackend }}" \
+                --argjson attempt "$attempt" \
+                --argjson expected "$expected" \
+                --argjson actual "$actual" \
+                '{
+                  node: $node,
+                  backend: $backend,
+                  attempt: $attempt,
+                  expected: $expected,
+                  actual: $actual,
+                  exact: ($expected == $actual)
+                }' >"$evidenceDir/imported-endpoints-$node.json"
+
+              if jq -e -n \
+                --argjson expected "$expected" \
+                --argjson actual "$actual" \
+                '($expected | length) > 0 and $expected == $actual' >/dev/null; then
+                imported=true
+                break
+              fi
+              sleep 15
+            done
+            if [[ "$imported" != "true" ]]; then
+              echo "CNS endpoint import on $node did not converge to the exact live pod endpoint set"
+              exit 1
+            fi
+          done
 
   - ${{ if eq(parameters.action, 'json-baseline') }}:
     - task: AzureCLI@2
@@ -478,8 +824,47 @@ steps:
           -n kube-system -o jsonpath='{.data.cns_config\.json}')
         jq -e \
           --arg backend "${{ parameters.expectedBackend }}" \
-          '.StateStoreBackend == $backend and .StateStoreMode == "normal"' \
+          --argjson manageEndpointState "${{ parameters.expectedManageEndpointState }}" \
+          --argjson initializeFromCNI "${{ parameters.expectedInitializeFromCNI }}" \
+          --argjson enableStateMigration "${{ parameters.expectedEnableStateMigration }}" \
+          '.StateStoreBackend == $backend
+            and .StateStoreMode == "normal"
+            and .ManageEndpointState == $manageEndpointState
+            and .InitializeFromCNI == $initializeFromCNI
+            and .EnableStateMigration == $enableStateMigration' \
           <<<"$config"
+
+        effectiveCNI="${{ parameters.cni }}"
+        expectedCNISource=
+        if [[ "${{ parameters.os }}" == "windows" ]]; then
+          case "$effectiveCNI" in
+            cniv2)
+              expectedCNISource=azure-vnet
+              ;;
+            stateless)
+              expectedCNISource=azure-vnet-stateless
+              ;;
+            *)
+              echo "unsupported Windows CNI type: $effectiveCNI"
+              exit 1
+              ;;
+          esac
+        fi
+        if [[ -n "$expectedCNISource" ]]; then
+          daemonsetJSON=$(kubectl get daemonset/${{ parameters.daemonsetName }} -n kube-system -o json)
+          jq -e \
+            --arg source "$expectedCNISource" '
+              [.spec.template.spec.initContainers[]? | select(.name == "cni-installer")] as $installers
+              | ($installers | length) == 1
+              and ($installers[0].args | [.[] | select(. == "azure-vnet" or . == "azure-vnet-stateless")]) == [$source]
+              and ($installers[0].args | index("/k/azurecni/bin/azure-vnet.exe")) != null
+            ' <<<"$daemonsetJSON"
+          jq -n \
+            --arg effectiveCNI "$effectiveCNI" \
+            --arg expectedCNISource "$expectedCNISource" \
+            '{effectiveCNI: $effectiveCNI, expectedCNISource: $expectedCNISource}' \
+            >"$evidenceDir/cni-type.json"
+        fi
 
         restartCase=true
         if [[ "${{ parameters.action }}" == "json-baseline" ]]; then
@@ -564,6 +949,7 @@ steps:
           "${{ parameters.expectedSchemaVersion }}" \
           "${{ parameters.stateRelation }}" \
           "${{ parameters.bootRelation }}" \
+          "${{ parameters.podRelation }}" \
           "$baselinePodState" \
           "$candidatePodState" \
           2>&1 | tee "$evidenceDir/comparison.txt"

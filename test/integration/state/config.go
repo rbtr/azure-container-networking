@@ -82,6 +82,7 @@ type envBackup struct {
 type migrationCNSConfig struct {
 	StateStoreBackend   string `json:"StateStoreBackend"`
 	ManageEndpointState bool   `json:"ManageEndpointState"`
+	InitializeFromCNI   bool   `json:"InitializeFromCNI"`
 }
 
 func loadFaultConfig(getenv func(string) string) (faultConfig, error) {
@@ -236,6 +237,9 @@ func validateMigrationCNSConfig(raw []byte) error {
 	}
 	if !config.ManageEndpointState {
 		return fmt.Errorf("%w: managed endpoint state must be enabled", errInvalidFaultConfig)
+	}
+	if config.InitializeFromCNI {
+		return fmt.Errorf("%w: CNI state initialization must be disabled", errInvalidFaultConfig)
 	}
 	return nil
 }
