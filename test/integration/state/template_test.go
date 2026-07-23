@@ -230,6 +230,7 @@ func TestOwnershipHandoffTemplateContract(t *testing.T) {
 		"..", "..", "..", ".pipelines", "cni", "state-migration", "lane.stage.yaml",
 	))
 	require.NoError(t, err)
+	require.Contains(t, string(laneRaw), `"K8S_VER=${{ parameters.kubernetesVersion }}"`)
 	for _, item := range transitions {
 		require.Contains(t, string(laneRaw), "\n            - "+item.Job)
 	}
@@ -247,6 +248,8 @@ func TestOwnershipHandoffPipelineContract(t *testing.T) {
 	)
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
+	require.Contains(t, string(raw), "- name: kubernetesVersion")
+	require.Contains(t, string(raw), `default: "1.34"`)
 
 	var document struct {
 		Stages []struct {

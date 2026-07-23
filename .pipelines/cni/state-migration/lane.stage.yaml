@@ -15,6 +15,8 @@ parameters:
     type: string
   - name: region
     type: string
+  - name: kubernetesVersion
+    type: string
   - name: nodeCount
     type: number
   - name: nodeCountWin
@@ -90,6 +92,7 @@ stages:
                 makeArgs=(
                   "AZCLI=az"
                   "REGION=${{ parameters.region }}"
+                  "K8S_VER=${{ parameters.kubernetesVersion }}"
                   "SUB=$(SUB_AZURE_NETWORK_AGENT_BUILD_VALIDATIONS)"
                   "CLUSTER=$cluster"
                   "NODE_COUNT=${{ parameters.nodeCount }}"
