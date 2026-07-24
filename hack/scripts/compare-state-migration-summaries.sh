@@ -53,7 +53,7 @@ if [[ "$pod_relation" == "inherit" ]]; then
 	pod_relation=$state_relation
 fi
 case "$pod_relation" in
-none | exact | changed) ;;
+none | exact | identity | changed) ;;
 *)
 	echo "unsupported pod relation: $pod_relation" >&2
 	exit 2
@@ -149,6 +149,9 @@ if ! jq -e -n \
 			}
 		]
 		| sort_by(.namespace, .name);
+	def pod_identities($pods):
+		normalized_pods($pods)
+		| map(del(.podIPs));
 
 	(normalized_pods($baselinePods[0])) as $before
 	| (normalized_pods($candidatePods[0])) as $after
@@ -157,6 +160,9 @@ if ! jq -e -n \
 	elif $relation == "exact" then
 		($before | length) > 0
 		and $before == $after
+	elif $relation == "identity" then
+		($before | length) > 0
+		and pod_identities($baselinePods[0]) == pod_identities($candidatePods[0])
 	else
 		($before | length) > 0
 		and ($after | length) > 0

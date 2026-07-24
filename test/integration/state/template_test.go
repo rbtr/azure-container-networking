@@ -2,7 +2,9 @@ package state
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -212,7 +214,7 @@ func TestOwnershipHandoffTemplateContract(t *testing.T) {
 	require.Equal(t, "node-reboot", transitions[17].Action)
 	require.Equal(t, statelessCNI, transitions[17].CNI)
 	require.Equal(t, enabled, transitions[17].ManageEndpointState)
-	require.Equal(t, "exact", transitions[17].PodRelation)
+	require.Equal(t, "identity", transitions[17].PodRelation)
 
 	for index := 1; index < len(transitions); index++ {
 		if transitions[index-1].ManageEndpointState == enabled && transitions[index].ManageEndpointState == disabled {
@@ -233,6 +235,102 @@ func TestOwnershipHandoffTemplateContract(t *testing.T) {
 	require.Contains(t, string(laneRaw), `"K8S_VER=${{ parameters.kubernetesVersion }}"`)
 	for _, item := range transitions {
 		require.Contains(t, string(laneRaw), "\n            - "+item.Job)
+	}
+}
+
+func TestCompareStateMigrationSummariesPodIdentity(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("bash validation runs on Linux pipeline agents")
+	}
+
+	const summary = `{"checks":[{
+		"checkName":"cns persistent metadata",
+		"nodeName":"node-1",
+		"validationPass":true,
+		"converged":true,
+		"missingIPs":[],
+		"unexpectedIPs":[],
+		"duplicateIPs":[],
+		"stateBackend":"bolt",
+		"authority":"bolt",
+		"schemaVersion":1,
+		"bootID":"boot-1",
+		"dbFilePresent":true,
+		"dbFileSizeBytes":1
+	}]}`
+	const baselinePods = `[{
+		"namespace":"load-test",
+		"name":"pod-1",
+		"nodeName":"node-1",
+		"phase":"Running",
+		"podIPs":["10.0.0.4"]
+	}]`
+
+	tests := []struct {
+		name          string
+		candidatePods string
+		wantErr       bool
+	}{
+		{
+			name: "IP changes on same pod and node",
+			candidatePods: `[{
+				"namespace":"load-test",
+				"name":"pod-1",
+				"nodeName":"node-1",
+				"phase":"Running",
+				"podIPs":["10.0.0.5"]
+			}]`,
+		},
+		{
+			name: "pod moves nodes",
+			candidatePods: `[{
+				"namespace":"load-test",
+				"name":"pod-1",
+				"nodeName":"node-2",
+				"phase":"Running",
+				"podIPs":["10.0.0.5"]
+			}]`,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			writeFixture := func(name, contents string) string {
+				t.Helper()
+				path := filepath.Join(tempDir, name)
+				require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
+				return path
+			}
+			baselineSummaryPath := writeFixture("baseline-summary.json", summary)
+			candidateSummaryPath := writeFixture("candidate-summary.json", summary)
+			baselinePodsPath := writeFixture("baseline-pods.json", baselinePods)
+			candidatePodsPath := writeFixture("candidate-pods.json", tt.candidatePods)
+
+			script := filepath.Join("..", "..", "..", "hack", "scripts", "compare-state-migration-summaries.sh")
+			command := exec.Command(
+				"bash",
+				script,
+				baselineSummaryPath,
+				candidateSummaryPath,
+				"bolt",
+				"bolt",
+				"1",
+				"none",
+				"none",
+				"identity",
+				baselinePodsPath,
+				candidatePodsPath,
+			)
+			output, err := command.CombinedOutput()
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Contains(t, string(output), "pod relation 'identity' failed")
+				return
+			}
+			require.NoError(t, err, string(output))
+		})
 	}
 }
 

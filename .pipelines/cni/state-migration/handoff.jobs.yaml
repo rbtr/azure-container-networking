@@ -311,7 +311,7 @@ parameters:
         enableStateMigration: "true"
         stateRelation: none
         bootRelation: changed
-        podRelation: exact
+        podRelation: identity
         faultInjection: false
         timeout: 120
 
